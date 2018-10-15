@@ -1,6 +1,10 @@
 package com.ericrobertbrewer.bookspider;
 
 import java.io.File;
+import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 
 class Folders {
 
@@ -10,6 +14,31 @@ class Folders {
      * Root of downloaded (scraped) content.
      */
     private static final String CONTENT_ROOT = "content" + SLASH;
+    /**
+     * Root of log files.
+     */
+    private static final String LOGS_ROOT = "logs" + SLASH;
 
-    static final String NY_TIMES = CONTENT_ROOT + SLASH + "nytimes" + SLASH;
+    static final String ID_NY_TIMES = "nytimes";
+
+    static File getContentFolder(String id) throws IOException {
+        final File folder = new File(CONTENT_ROOT + id + SLASH);
+        if (!folder.exists() && !folder.mkdirs()) {
+            throw new IOException("Unable to create content folder: `" + folder.getPath() + "`.");
+        }
+        return folder;
+    }
+
+    private static File getLogsFolder(String id) throws IOException {
+        final File folder = new File(LOGS_ROOT + id + SLASH);
+        if (!folder.exists() && !folder.mkdirs()) {
+            throw new IOException("Unable to create logs folder: `" + folder.getPath() + "`.");
+        }
+        return folder;
+    }
+
+    static File getLogFile(String id) throws IOException {
+        final DateFormat dateFormat = new SimpleDateFormat("YYYY-MM-dd_HH-mm-ss");
+        return new File(getLogsFolder(id), dateFormat.format(new Date()) + ".log");
+    }
 }

@@ -1,5 +1,6 @@
 # START Application-specific
 content/
+logs/
 # END Application-specific
 
 # START Java.gitignore
