@@ -15,13 +15,20 @@ import java.util.logging.SimpleFormatter;
 public class Main {
 
     public static void main(String[] args) throws IOException {
-        if (args.length < 1 || args.length > 1) {
-            throw new IllegalArgumentException("Usage: <driver-path>");
+        if (args.length < 1 || args.length > 2) {
+            throw new IllegalArgumentException("Usage: <driver-path> [force]");
         }
         // Create web driver.
         final String driverPath = args[0];
         System.setProperty("webdriver.chrome.driver", driverPath);
 	    final WebDriver driver = new ChromeDriver();
+	    // Check `force` flag.
+        final boolean force;
+        if (args.length > 1) {
+            force = Boolean.parseBoolean(args[1]);
+        } else {
+            force = false;
+        }
 	    // Create logger.
 	    final String id = Folders.ID_NY_TIMES;
 		final Logger logger = Logger.getLogger(NewYorkTimesFirstChapters.class.getSimpleName());
@@ -35,7 +42,7 @@ public class Main {
 		// Create site scraper.
 		final SiteScraper siteScraper = new NewYorkTimesFirstChapters(logger);
 	    System.out.println("Starting scrape...");
-	    siteScraper.scrape(driver, contentFolder);
+	    siteScraper.scrape(driver, contentFolder, force);
 	    driver.quit();
 	    fileHandler.close();
 	    System.out.println("Done.");

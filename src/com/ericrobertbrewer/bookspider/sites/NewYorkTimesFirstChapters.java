@@ -38,7 +38,8 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriver driver, File contentFolder) {
+    public void scrape(WebDriver driver, File contentFolder, boolean force) {
+        getLogger().log(Level.INFO, "Scraping New York Times first chapters.");
         // Set timeout for obsolete API call (to
         // `http://barnesandnoble.bfast.com/booklink/serve?sourceid=4773&categoryid=nytsearch`).
         driver.manage().timeouts().setScriptTimeout(1000L, TimeUnit.MILLISECONDS);
@@ -46,19 +47,33 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
 //        driver.manage().timeouts().pageLoadTimeout(1000L, TimeUnit.MILLISECONDS);
         // Navigate to home page.
         driver.navigate().to("https://archive.nytimes.com/www.nytimes.com/books/first/first-index.html");
-        getLogger().log(Level.INFO, "Starting to scrape New York Times first chapters.");
         // Scroll the page.
         DriverUtils.scrollDown(driver, 100, 25L);
-        // Create the contents file
+        // Create the contents file.
+        // Delete it when `force`==`true`.
         final File contentsFile = new File(contentFolder, "contents.tsv");
+        if (contentsFile.exists()) {
+            if (force) {
+                if (!contentsFile.delete()) {
+                    getLogger().log(Level.SEVERE, "Unable to delete contents file `" + contentsFile.getPath() + "` while `force`==`true`.");
+                    return;
+                } else {
+                    getLogger().log(Level.INFO, "Deleted contents file `" + contentsFile.getPath() + "` while `force`==`true`.");
+                }
+            }
+        }
+        // Create the PrintWriter.
+        final boolean exists = contentsFile.exists();
         final PrintWriter contentsWriter;
         try {
-            contentsWriter = new PrintWriter(new FileWriter(contentsFile));
+            contentsWriter = new PrintWriter(new FileWriter(contentsFile, exists));
+            if (!exists) {
+                contentsWriter.println("author\ttitle\tfile\turl");
+            }
         } catch (IOException e) {
             getLogger().log(Level.SEVERE, "Unable to write to contents file.", e);
             return;
         }
-        contentsWriter.println("author\ttitle\tfile\turl");
         final List<BookItem> bookItems = new ArrayList<>();
         final List<WebElement> lis = driver.findElements(By.tagName("li"));
         for (WebElement li : lis) {
@@ -81,22 +96,35 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
             }
         }
         for (BookItem bookItem : bookItems) {
-            scrapeBook(driver, contentFolder, bookItem, contentsWriter);
+            scrapeBook(driver, contentFolder, bookItem, contentsWriter, force);
         }
         contentsWriter.close();
     }
 
-    private void scrapeBook(WebDriver driver, File rootFolder, BookItem bookItem, PrintWriter contentsWriter) {
-        driver.navigate().to(bookItem.url);
-        getLogger().log(Level.INFO, "Scraping `" + bookItem.author + ": " + bookItem.title + "`.");
-        DriverUtils.scrollDown(driver, 60, 25L);
+    private void scrapeBook(WebDriver driver, File contentFolder, BookItem bookItem, PrintWriter contentsWriter, boolean force) {
         final String fileName = bookItem.getTextFileName();
-        final File file = new File(rootFolder, fileName);
+        final File file = new File(contentFolder, fileName);
+        if (file.exists()) {
+            if (force) {
+                if (!file.delete()) {
+                    getLogger().log(Level.SEVERE, "Unable to delete file `" + file.getPath() + "` while `force`==`true`.");
+                    return;
+                } else {
+                    getLogger().log(Level.INFO, "Deleted file `" + file.getPath() + "` while `force`==`true`.");
+                }
+            } else {
+                getLogger().log(Level.INFO, "Skipping scrape because of existing file `" + file.getPath() + "` while `force`==`false`.");
+                return;
+            }
+        }
+        getLogger().log(Level.INFO, "Scraping `" + bookItem.author + ": " + bookItem.title + "`.");
+        driver.navigate().to(bookItem.url);
+        DriverUtils.scrollDown(driver, 60, 25L);
         try {
             writeBook(driver, file);
             contentsWriter.println(bookItem.author + "\t" + bookItem.title + "\t" + fileName + "\t" + bookItem.url);
         } catch (IOException e) {
-            getLogger().log(Level.SEVERE, "Unable to write to book file.", e);
+            getLogger().log(Level.SEVERE, "Unable to write to book file `" + file.getPath() + "`.", e);
         }
     }
 
@@ -106,16 +134,18 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
         boolean hasReachedText = false;
         for (WebElement p : ps) {
             final String text = p.getText().trim();
+            // Skip empty lines.
             if (text.length() == 0) {
                 continue;
             }
-            if ("Read the Review".equalsIgnoreCase(text)) {
-                hasReachedText = true;
-                continue;
-            }
+            // Ignore meta data above review link.
             if (!hasReachedText) {
+                if ("Read the Review".equalsIgnoreCase(text)) {
+                    hasReachedText = true;
+                }
                 continue;
             }
+            // Detect end of content.
             if (text.contains("(C)") || text.contains("ISBN:")) {
                 break;
             }
