@@ -1,5 +1,6 @@
 package com.ericrobertbrewer.bookspider.sites;
 
+import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.web.DriverUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
@@ -14,6 +15,20 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class NewYorkTimesFirstChapters extends SiteScraper {
+
+    public static void main(String[] args) throws IOException {
+        Launcher.launch(args, new Creator() {
+            @Override
+            public Class<? extends SiteScraper> getScraperClass() {
+                return NewYorkTimesFirstChapters.class;
+            }
+
+            @Override
+            public SiteScraper newInstance(Logger logger) {
+                return new NewYorkTimesFirstChapters(logger);
+            }
+        });
+    }
 
     public NewYorkTimesFirstChapters(Logger logger) {
         super(logger);

@@ -7,14 +7,15 @@ import java.util.logging.Logger;
 
 public abstract class SiteScraper {
 
+    public interface Creator {
+        Class<? extends SiteScraper> getScraperClass();
+        SiteScraper newInstance(Logger logger);
+    }
+
     private final Logger logger;
 
     SiteScraper(Logger logger) {
         this.logger = logger;
-    }
-
-    public void scrape(WebDriver driver, File contentFolder) {
-        scrape(driver, contentFolder, false);
     }
 
     /**
