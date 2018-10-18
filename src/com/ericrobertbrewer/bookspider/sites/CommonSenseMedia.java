@@ -464,7 +464,7 @@ public class CommonSenseMedia extends SiteScraper {
             final PreparedStatement s = connection.prepareStatement(
                     "INSERT INTO " + TABLE_BOOKS +
                     "(id,title,author,illustrator,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
             s.setString(1, book.id);
             s.setString(2, book.title);
             s.setString(3, book.author);
