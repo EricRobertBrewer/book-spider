@@ -50,8 +50,8 @@ public class CommonSenseMedia extends SiteScraper {
      * Used like: `DETAILS_URL` + `bookId`.
      */
     private static final String DETAILS_URL = "https://www.commonsensemedia.org/book-reviews/";
-    private static final DateFormat PUBLICATION_DATE_FORMAT_WEB = new SimpleDateFormat("MMMM dd, YYYY", Locale.US);
-    private static final DateFormat PUBLICATION_DATE_FORMAT_DATABASE = new SimpleDateFormat("YYYY-MM-dd", Locale.US);
+    private static final DateFormat PUBLICATION_DATE_FORMAT_WEB = new SimpleDateFormat("MMMM d, yyyy", Locale.US);
+    private static final DateFormat PUBLICATION_DATE_FORMAT_DATABASE = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private CommonSenseMedia(Logger logger) {
         super(logger);
