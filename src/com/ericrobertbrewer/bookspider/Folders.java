@@ -30,16 +30,17 @@ public class Folders {
         return folder;
     }
 
+    static File getLogFile(String id) throws IOException {
+        return new File(getLogsFolder(id), LOG_DATE_FORMAT.format(new Date()) + ".log");
+    }
+
+    private static final DateFormat LOG_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+
     private static File getLogsFolder(String id) throws IOException {
         final File folder = new File(LOGS_ROOT + id + SLASH);
         if (!folder.exists() && !folder.mkdirs()) {
             throw new IOException("Unable to create logs folder: `" + folder.getPath() + "`.");
         }
         return folder;
-    }
-
-    static File getLogFile(String id) throws IOException {
-        final DateFormat dateFormat = new SimpleDateFormat("YYYY-MM-dd_HH-mm-ss");
-        return new File(getLogsFolder(id), dateFormat.format(new Date()) + ".log");
     }
 }
