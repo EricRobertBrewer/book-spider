@@ -21,7 +21,6 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.Date;
-import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -115,8 +114,6 @@ public class CommonSenseMedia extends SiteScraper {
      * @param frontierWriter Writer to file which contains unique book IDs.
      */
     private void exploreFrontier(WebDriver driver, Queue<String> frontier, PrintWriter frontierWriter) {
-        // Allow implicit wait time.
-        driver.manage().timeouts().implicitlyWait(10L, TimeUnit.SECONDS);
         // Keep a running set of book IDs to avoid writing duplicates.
         final Set<String> frontierSet = new HashSet<>(frontier);
         // Simply scrape each page.
