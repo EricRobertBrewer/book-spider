@@ -242,12 +242,13 @@ public class CommonSenseMedia extends SiteScraper {
         final List<BookCategory> bookCategories = new ArrayList<>();
         final WebElement contentGridContainerDiv = contentMidMainDiv.findElement(By.className("pane-node-field-collection-content-grid"));
         final WebElement contentGridDiv = contentGridContainerDiv.findElement(By.className("field-name-field-collection-content-grid"));
-        final List<WebElement> contentGridFieldItems = contentGridDiv.findElements(By.className("field-item"));
-        for (WebElement contentGridFieldItem : contentGridFieldItems) {
+        final WebElement contentGridItemsDiv = contentGridDiv.findElement(By.className("field-items"));
+        final List<WebElement> contentGridItemDivs = contentGridItemsDiv.findElements(By.xpath("./*"));
+        for (WebElement contentGridItemDiv : contentGridItemDivs) {
             try {
                 final BookCategory bookCategory = new BookCategory();
                 bookCategory.bookId = bookId;
-                final WebElement itemLeftDiv = contentGridFieldItem.findElement(By.className("field-collection-item-field-collection-content-grid"));
+                final WebElement itemLeftDiv = contentGridItemDiv.findElement(By.className("field-collection-item-field-collection-content-grid"));
                 // Extract level.
                 final WebElement categoryRatingDiv = itemLeftDiv.findElement(By.className("field_content_grid_rating"));
                 final String categoryClasses = categoryRatingDiv.getAttribute("class");
