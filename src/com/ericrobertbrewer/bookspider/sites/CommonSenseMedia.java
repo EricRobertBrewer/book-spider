@@ -309,7 +309,19 @@ public class CommonSenseMedia extends SiteScraper {
         for (WebElement detailsLi : detailsLis) {
             final String detailsText = detailsLi.getText().trim();
             if (detailsText.startsWith("Author:")) {
-                book.author = detailsText.substring("Author:".length()).trim();
+                book.authors = detailsText.substring("Author:".length()).trim();
+            } else if (detailsText.startsWith("Authors:")) {
+                // Assume that each author is contained in an anchor <a> tag.
+                final List<WebElement> authorsAs = detailsLi.findElements(By.tagName("a"));
+                final StringBuilder authors = new StringBuilder();
+                for (WebElement authorsA : authorsAs) {
+                    final String authorsAText = authorsA.getText().trim();
+                    if (authors.length() > 0) {
+                        authors.append("|");
+                    }
+                    authors.append(authorsAText);
+                }
+                book.authors = authors.toString();
             } else if (detailsText.startsWith("Illustrator:")) {
                 book.illustrator = detailsText.substring("Illustrator:".length()).trim();
             } else if (detailsText.startsWith("Genre:")) {
@@ -325,7 +337,7 @@ public class CommonSenseMedia extends SiteScraper {
                     topics.append(topicsAText);
                 }
                 book.topics = topics.toString();
-            } else if (detailsText.startsWith("Book Type:")) {
+            } else if (detailsText.startsWith("Book Type:") || detailsText.startsWith("Book type:")) {
                 book.type = detailsText.substring("Book Type:".length()).toLowerCase().trim();
             } else if (detailsText.startsWith("Publisher:")) {
                 book.publishers = detailsText.substring("Publisher:".length()).trim();
@@ -341,7 +353,7 @@ public class CommonSenseMedia extends SiteScraper {
                     publishers.append(publishersAText);
                 }
                 book.publishers = publishers.toString();
-            } else if (detailsText.startsWith("Publication Date:")) {
+            } else if (detailsText.startsWith("Publication Date:") || detailsText.startsWith("Publication date:")) {
                 final String publicationDateString = detailsText.substring("Publication Date:".length()).trim();
                 try {
                     final Date publicationDate = PUBLICATION_DATE_FORMAT_WEB.parse(publicationDateString);
@@ -358,6 +370,9 @@ public class CommonSenseMedia extends SiteScraper {
                 } catch (NumberFormatException e) {
                     getLogger().log(Level.WARNING, "Unable to parse number of pages: `" + pagesString + "`.", e);
                 }
+            } else //noinspection StatementWithEmptyBody
+                if (detailsText.startsWith("Available on:")) {
+                // Do nothing.
             } else {
                 getLogger().log(Level.WARNING, "Unknown book details prefix: `" + detailsText + "`.");
             }
@@ -380,7 +395,7 @@ public class CommonSenseMedia extends SiteScraper {
     private static class Book {
         String id;
         String title;
-        String author;
+        String authors;
         String illustrator = null;
         String age;
         int stars;
@@ -461,11 +476,11 @@ public class CommonSenseMedia extends SiteScraper {
             ensureTableExists(TABLE_BOOKS);
             final PreparedStatement s = connection.prepareStatement(
                     "INSERT INTO " + TABLE_BOOKS +
-                    "(id,title,author,illustrator,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
+                    "(id,title,authors,illustrator,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
                     " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
             s.setString(1, book.id);
             s.setString(2, book.title);
-            s.setString(3, book.author);
+            s.setString(3, book.authors);
             setStringOrNull(s, 4, book.illustrator);
             s.setString(5, book.age);
             s.setInt(6, book.stars);
@@ -508,7 +523,7 @@ public class CommonSenseMedia extends SiteScraper {
                 statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (\n" +
                         " id TEXT PRIMARY KEY,\n" + // the-unwanted-stories-of-the-syrian-refugees
                         " title TEXT NOT NULL,\n" + // The Unwanted: Stories of the Syrian Refugees
-                        " author TEXT NOT NULL,\n" + // Don Brown
+                        " authors TEXT NOT NULL,\n" + // Don Brown
                         " illustrator TEXT DEFAULT NULL,\n" + // Don Brown
                         " age TEXT NOT NULL,\n" + // 13+
                         " stars INTEGER NOT NULL,\n" + // 5
