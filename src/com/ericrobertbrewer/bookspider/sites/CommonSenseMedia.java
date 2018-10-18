@@ -140,7 +140,6 @@ public class CommonSenseMedia extends SiteScraper {
                         frontier.add(bookId);
                         frontierWriter.println(bookId);
                         frontierSet.add(bookId);
-                        getLogger().log(Level.INFO, "Added new book `" + bookId + "` to frontier.");
                     }
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.WARNING, "Could not find 'Continue Reading' button on page " + page + ".", e);
@@ -155,6 +154,7 @@ public class CommonSenseMedia extends SiteScraper {
                 break;
             }
         }
+        getLogger().log(Level.INFO, "Collected " + frontierSet.size() + " unique book IDs, ending on page " + page + ".");
     }
 
     /**
