@@ -131,7 +131,6 @@ public class CommonSenseMedia extends SiteScraper {
             final WebElement reviewsBrowseDiv = driver.findElement(By.className("view-display-id-ctools_context_reviews_browse"));
             final WebElement viewContentDiv = reviewsBrowseDiv.findElement(By.className("view-content"));
             final List<WebElement> viewsRows = viewContentDiv.findElements(By.className("views-row"));
-//            final List<WebElement> viewsRows = paneContentDiv.findElements(By.className("views-row"));
             for (WebElement viewsRow : viewsRows) {
                 try {
                     final WebElement csmButtonA = viewsRow.findElement(By.className("csm-button"));
@@ -200,11 +199,12 @@ public class CommonSenseMedia extends SiteScraper {
         // Scrape this book.
         getLogger().log(Level.INFO, "Scraping book: `" + bookId + "`.");
         driver.navigate().to(DETAILS_URL + bookId);
+        // Create the book record to be saved in the database.
         final Book book = new Book();
         book.id = bookId;
         final WebElement contentDiv = driver.findElement(By.id("content"));
-        // Extract title.
         final WebElement topWrapperDiv = contentDiv.findElement(By.className("panel-content-top-wrapper"));
+        // Extract title.
         final WebElement titleDiv = topWrapperDiv.findElement(By.className("pane-node-title"));
         book.title = titleDiv.getText().trim();
         // Extract age, stars, and kicker (one-liner).
@@ -232,7 +232,6 @@ public class CommonSenseMedia extends SiteScraper {
         }
         final WebElement oneLinerDiv = contentTopMainDiv.findElement(By.className("pane-node-field-one-liner"));
         book.kicker = oneLinerDiv.getText().trim();
-//        final WebElement paneProductSubtitleDiv = panelContentTopMainDiv.findElement(By.className("pane-product-subtitle"));
         final WebElement centerWrapperDiv = contentDiv.findElement(By.className("center-wrapper"));
         final WebElement contentMidMainDiv = centerWrapperDiv.findElement(By.className("panel-content-mid-main"));
         // Extract categories for this book.
@@ -265,11 +264,15 @@ public class CommonSenseMedia extends SiteScraper {
                 final WebElement categoryTypeDiv = itemLeftDiv.findElement(By.className("field-name-field-content-grid-type"));
                 bookCategory.categoryId = categoryTypeDiv.getText().trim();
                 // Extract explanation.
-                try {
-                    final WebElement categoryExplanationDiv = itemLeftDiv.findElement(By.className("field-name-field-content-grid-rating-text"));
-                    bookCategory.explanation = categoryExplanationDiv.getText().trim();
-                } catch (NoSuchElementException e) {
-                    // This element may not exist (especially when the rating is 0, or the category is not present).
+                if (bookCategory.level > 0) {
+                    try {
+                        final WebElement categoryExplanationDiv = itemLeftDiv.findElement(By.className("field-name-field-content-grid-rating-text"));
+                        final WebElement categoryExplanationP = categoryExplanationDiv.findElement(By.tagName("p"));
+                        bookCategory.explanation = categoryExplanationP.getAttribute("textContent").trim();
+                    } catch (NoSuchElementException e) {
+                        // This element SHOULD exist under the current condition (when rating > 0, i.e., the category is present).
+                        getLogger().log(Level.WARNING, "Unable to find content explanation text for book:category `" + bookId + ":" + bookCategory.categoryId + "` with content rating " + bookCategory.level + ".");
+                    }
                 }
                 bookCategories.add(bookCategory);
             } catch (NoSuchElementException e) {
@@ -279,15 +282,15 @@ public class CommonSenseMedia extends SiteScraper {
         // Extract 'What Parents Need to Know'.
         final WebElement knowDiv = contentMidMainDiv.findElement(By.className("pane-node-field-parents-need-to-know"));
         final WebElement knowTextDiv = knowDiv.findElement(By.className("field-name-field-parents-need-to-know"));
-        book.know = knowTextDiv.getText().trim();
+        book.know = knowTextDiv.getAttribute("textContent").trim();
         // Extract 'What's the Story?'.
         final WebElement storyDiv = contentMidMainDiv.findElement(By.className("pane-node-field-what-is-story"));
         final WebElement storyTextDiv = storyDiv.findElement(By.className("field-name-field-what-is-story"));
-        book.story = storyTextDiv.getText().trim();
+        book.story = storyTextDiv.getAttribute("textContent").trim();
         // Extract 'Is It Any Good?'.
         final WebElement goodDiv = contentMidMainDiv.findElement(By.className("pane-node-field-any-good"));
         final WebElement goodTextDiv = goodDiv.findElement(By.className("field-name-field-any-good"));
-        book.good = goodTextDiv.getText().trim();
+        book.good = goodTextDiv.getAttribute("textContent").trim();
         // Extract 'Talk to Your Kids About...'.
         final WebElement talkDiv = contentMidMainDiv.findElement(By.className("pane-node-field-family-topics"));
         final WebElement talkTextDiv = talkDiv.findElement(By.className("field-name-field-family-topics"));
@@ -295,7 +298,7 @@ public class CommonSenseMedia extends SiteScraper {
         final StringBuilder talk = new StringBuilder();
         final List<WebElement> talkTextLis = talkTextListUl.findElements(By.tagName("li"));
         for (WebElement talkTextLi : talkTextLis) {
-            final String talkLiText = talkTextLi.getText().trim();
+            final String talkLiText = talkTextLi.getAttribute("textContent").trim();
             if (talk.length() > 0) {
                 talk.append("||");
             }
@@ -307,7 +310,7 @@ public class CommonSenseMedia extends SiteScraper {
         final WebElement detailsUl = detailsDiv.findElement(By.id("review-product-details-list"));
         final List<WebElement> detailsLis = detailsUl.findElements(By.xpath("./*"));
         for (WebElement detailsLi : detailsLis) {
-            final String detailsText = detailsLi.getText().trim();
+            final String detailsText = detailsLi.getAttribute("textContent").trim();
             if (detailsText.startsWith("Author:")) {
                 book.authors = detailsText.substring("Author:".length()).trim();
             } else if (detailsText.startsWith("Authors:")) {
@@ -417,7 +420,7 @@ public class CommonSenseMedia extends SiteScraper {
     private static class BookCategory {
         String bookId;
         String categoryId;
-        int level;
+        int level = -1;
         String explanation;
     }
 
