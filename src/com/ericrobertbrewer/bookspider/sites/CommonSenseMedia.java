@@ -306,7 +306,7 @@ public class CommonSenseMedia extends SiteScraper {
             talk.append(talkLiText);
         }
         book.talk = talk.toString();
-        // Extract author, illustrator, genre, topics, type, publisher, publishing date, pages.
+        // Extract authors, illustrators, genre, topics, type, publishers, publishing date, pages.
         final WebElement detailsDiv = contentMidMainDiv.findElement(By.className("pane-product-details"));
         final WebElement detailsUl = detailsDiv.findElement(By.id("review-product-details-list"));
         final List<WebElement> detailsLis = detailsUl.findElements(By.xpath("./*"));
@@ -315,48 +315,21 @@ public class CommonSenseMedia extends SiteScraper {
             if (detailsText.startsWith("Author:")) {
                 book.authors = detailsText.substring("Author:".length()).trim();
             } else if (detailsText.startsWith("Authors:")) {
-                // Assume that each author is contained in an anchor <a> tag.
-                final List<WebElement> authorsAs = detailsLi.findElements(By.tagName("a"));
-                final StringBuilder authors = new StringBuilder();
-                for (WebElement authorsA : authorsAs) {
-                    final String authorsAText = authorsA.getAttribute("textContent").trim();
-                    if (authors.length() > 0) {
-                        authors.append("|");
-                    }
-                    authors.append(authorsAText);
-                }
-                book.authors = authors.toString();
+                book.authors = getConcatenatedAnchorTexts(detailsLi);
             } else if (detailsText.startsWith("Illustrator:")) {
-                book.illustrator = detailsText.substring("Illustrator:".length()).trim();
+                book.illustrators = detailsText.substring("Illustrator:".length()).trim();
+            } else if (detailsText.startsWith("Illustrators:")) {
+                book.illustrators = getConcatenatedAnchorTexts(detailsLi);
             } else if (detailsText.startsWith("Genre:")) {
                 book.genre = detailsText.substring("Genre:".length()).toLowerCase().trim();
             } else if (detailsText.startsWith("Topics:")) {
-                final List<WebElement> topicsAs = detailsLi.findElements(By.tagName("a"));
-                final StringBuilder topics = new StringBuilder();
-                for (WebElement topicsA : topicsAs) {
-                    final String topicsAText = topicsA.getAttribute("textContent").trim();
-                    if (topics.length() > 0) {
-                        topics.append("|");
-                    }
-                    topics.append(topicsAText);
-                }
-                book.topics = topics.toString();
+                book.topics = getConcatenatedAnchorTexts(detailsLi);
             } else if (detailsText.startsWith("Book Type:") || detailsText.startsWith("Book type:")) {
                 book.type = detailsText.substring("Book Type:".length()).toLowerCase().trim();
             } else if (detailsText.startsWith("Publisher:")) {
                 book.publishers = detailsText.substring("Publisher:".length()).trim();
             } else if (detailsText.startsWith("Publishers:")) {
-                // Assume that every publisher is contained in an anchor (`<a>`) tag.
-                final List<WebElement> publishersAs = detailsLi.findElements(By.tagName("a"));
-                final StringBuilder publishers = new StringBuilder();
-                for (WebElement publishersA : publishersAs) {
-                    final String publishersAText = publishersA.getAttribute("textContent").trim();
-                    if (publishers.length() > 0) {
-                        publishers.append("|");
-                    }
-                    publishers.append(publishersAText);
-                }
-                book.publishers = publishers.toString();
+                book.publishers = getConcatenatedAnchorTexts(detailsLi);
             } else if (detailsText.startsWith("Publication Date:") || detailsText.startsWith("Publication date:")) {
                 final String publicationDateString = detailsText.substring("Publication Date:".length()).trim();
                 try {
@@ -397,11 +370,24 @@ public class CommonSenseMedia extends SiteScraper {
         }
     }
 
+    private static String getConcatenatedAnchorTexts(WebElement element) {
+        final List<WebElement> as = element.findElements(By.tagName("a"));
+        final StringBuilder s = new StringBuilder();
+        for (WebElement a : as) {
+            final String aText = a.getAttribute("textContent").trim();
+            if (s.length() > 0) {
+                s.append("|");
+            }
+            s.append(aText);
+        }
+        return s.toString();
+    }
+
     private static class Book {
         String id;
         String title;
         String authors;
-        String illustrator = null;
+        String illustrators = null;
         String age;
         int stars;
         String kicker;
@@ -481,12 +467,12 @@ public class CommonSenseMedia extends SiteScraper {
             ensureTableExists(TABLE_BOOKS);
             final PreparedStatement s = connection.prepareStatement(
                     "INSERT INTO " + TABLE_BOOKS +
-                    "(id,title,authors,illustrator,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
+                    "(id,title,authors,illustrators,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
                     " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
             s.setString(1, book.id);
             s.setString(2, book.title);
             s.setString(3, book.authors);
-            setStringOrNull(s, 4, book.illustrator);
+            setStringOrNull(s, 4, book.illustrators);
             s.setString(5, book.age);
             s.setInt(6, book.stars);
             s.setString(7, book.kicker);
@@ -529,7 +515,7 @@ public class CommonSenseMedia extends SiteScraper {
                         " id TEXT PRIMARY KEY,\n" + // the-unwanted-stories-of-the-syrian-refugees
                         " title TEXT NOT NULL,\n" + // The Unwanted: Stories of the Syrian Refugees
                         " authors TEXT NOT NULL,\n" + // Don Brown
-                        " illustrator TEXT DEFAULT NULL,\n" + // Don Brown
+                        " illustrators TEXT DEFAULT NULL,\n" + // Don Brown
                         " age TEXT NOT NULL,\n" + // 13+
                         " stars INTEGER NOT NULL,\n" + // 5
                         " kicker TEXT NOT NULL,\n" + // Compassionate graphic novel account of refugees' struggle.
