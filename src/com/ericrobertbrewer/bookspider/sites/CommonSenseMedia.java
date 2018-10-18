@@ -304,8 +304,8 @@ public class CommonSenseMedia extends SiteScraper {
         book.talk = talk.toString();
         // Extract author, illustrator, genre, topics, type, publisher, publishing date, pages.
         final WebElement detailsDiv = contentMidMainDiv.findElement(By.className("pane-product-details"));
-        final WebElement detailsUl = detailsDiv.findElement(By.className("review-product-details-list"));
-        final List<WebElement> detailsLis = detailsUl.findElements(By.tagName("li"));
+        final WebElement detailsUl = detailsDiv.findElement(By.id("review-product-details-list"));
+        final List<WebElement> detailsLis = detailsUl.findElements(By.xpath("./*"));
         for (WebElement detailsLi : detailsLis) {
             final String detailsText = detailsLi.getText().trim();
             if (detailsText.startsWith("Author:")) {
