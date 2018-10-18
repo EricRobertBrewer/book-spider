@@ -96,7 +96,7 @@ public class CommonSenseMedia extends SiteScraper {
         // Create a separate thread to scrape books.
         final Thread scrapeThread = new Thread(() -> {
             final WebDriver scrapeDriver = factory.newChromeDriver();
-            databaseHelper.connect(contentFolder.getPath() + "contents.db");
+            databaseHelper.connect(contentFolder.getPath() + Folders.SLASH + "contents.db");
             scrapeBooks(scrapeDriver, frontier, databaseHelper);
             databaseHelper.close();
             scrapeDriver.quit();
@@ -417,7 +417,7 @@ public class CommonSenseMedia extends SiteScraper {
         DatabaseHelper() {
         }
 
-        void connect(@SuppressWarnings("SameParameterValue") String fileName) {
+        void connect(String fileName) {
             try {
                 connection = DriverManager.getConnection("jdbc:sqlite:" + fileName);
             } catch (SQLException e) {

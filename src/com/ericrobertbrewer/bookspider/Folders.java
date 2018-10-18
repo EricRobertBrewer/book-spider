@@ -8,7 +8,7 @@ import java.util.Date;
 
 public class Folders {
 
-    private static final String SLASH = File.separator;
+    public static final String SLASH = File.separator;
 
     /**
      * Root of downloaded (scraped) content.
