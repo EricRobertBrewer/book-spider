@@ -65,7 +65,7 @@ public class CommonSenseMedia extends SiteScraper {
         }
         getLogger().log(Level.INFO, "Scraping Common Sense Media.");
         // Create frontier.
-        final Queue<String> frontier = new PriorityQueue<>();
+        final Queue<String> frontier = new LinkedList<>();
         final File frontierFile = new File(contentFolder, "frontier.txt");
         final boolean exists = frontierFile.exists();
         if (exists) {
