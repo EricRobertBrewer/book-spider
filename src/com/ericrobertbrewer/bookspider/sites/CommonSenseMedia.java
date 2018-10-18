@@ -404,7 +404,7 @@ public class CommonSenseMedia extends SiteScraper {
         int stars;
         String kicker;
         String genre;
-        String topics;
+        String topics = null;
         String type;
         String know = null;
         String story = null;
@@ -421,7 +421,7 @@ public class CommonSenseMedia extends SiteScraper {
         String bookId;
         String categoryId;
         int level = -1;
-        String explanation;
+        String explanation = null;
     }
 
     private class DatabaseHelper {
@@ -489,7 +489,7 @@ public class CommonSenseMedia extends SiteScraper {
             s.setInt(6, book.stars);
             s.setString(7, book.kicker);
             s.setString(8, book.genre);
-            s.setString(9, book.topics);
+            setStringOrNull(s, 9, book.topics);
             s.setString(10, book.type);
             setStringOrNull(s, 11, book.know);
             setStringOrNull(s, 12, book.story);
@@ -514,7 +514,7 @@ public class CommonSenseMedia extends SiteScraper {
             s.setString(1, bookCategory.bookId);
             s.setString(2, bookCategory.categoryId);
             s.setInt(3, bookCategory.level);
-            s.setString(4, bookCategory.explanation);
+            setStringOrNull(s, 4, bookCategory.explanation);
             final int r = s.executeUpdate();
             s.close();
             return r;
@@ -532,7 +532,7 @@ public class CommonSenseMedia extends SiteScraper {
                         " stars INTEGER NOT NULL,\n" + // 5
                         " kicker TEXT NOT NULL,\n" + // Compassionate graphic novel account of refugees' struggle.
                         " genre TEXT NOT NULL,\n" + // graphic novel
-                        " topics TEXT NOT NULL,\n" + // history,misfits and underdogs,pirates
+                        " topics TEXT DEFAULT NULL,\n" + // history,misfits and underdogs,pirates
                         " type TEXT NOT NULL,\n" + // non-fiction
                         " know TEXT DEFAULT NULL,\n" + // Parents need to know that The Unwanted is a nonfiction graphic novel written and illustrated by...
                         " story TEXT DEFAULT NULL,\n" + // Beginning in 2011, THE UNWANTED shows how the simple act of spray-painting...
