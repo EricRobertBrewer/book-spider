@@ -190,6 +190,7 @@ public class CommonSenseMedia extends SiteScraper {
         getLogger().log(Level.INFO, "Done scraping details.");
     }
 
+    @SuppressWarnings("StatementWithEmptyBody")
     private void scrapeBook(WebDriver driver, String bookId, DatabaseHelper databaseHelper) throws SQLException, NoSuchElementException {
         // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
         // Ignore books which have already been scraped.
@@ -318,7 +319,7 @@ public class CommonSenseMedia extends SiteScraper {
                 final List<WebElement> authorsAs = detailsLi.findElements(By.tagName("a"));
                 final StringBuilder authors = new StringBuilder();
                 for (WebElement authorsA : authorsAs) {
-                    final String authorsAText = authorsA.getText().trim();
+                    final String authorsAText = authorsA.getAttribute("textContent").trim();
                     if (authors.length() > 0) {
                         authors.append("|");
                     }
@@ -333,7 +334,7 @@ public class CommonSenseMedia extends SiteScraper {
                 final List<WebElement> topicsAs = detailsLi.findElements(By.tagName("a"));
                 final StringBuilder topics = new StringBuilder();
                 for (WebElement topicsA : topicsAs) {
-                    final String topicsAText = topicsA.getText().trim();
+                    final String topicsAText = topicsA.getAttribute("textContent").trim();
                     if (topics.length() > 0) {
                         topics.append("|");
                     }
@@ -349,7 +350,7 @@ public class CommonSenseMedia extends SiteScraper {
                 final List<WebElement> publishersAs = detailsLi.findElements(By.tagName("a"));
                 final StringBuilder publishers = new StringBuilder();
                 for (WebElement publishersA : publishersAs) {
-                    final String publishersAText = publishersA.getText().trim();
+                    final String publishersAText = publishersA.getAttribute("textContent").trim();
                     if (publishers.length() > 0) {
                         publishers.append("|");
                     }
@@ -373,9 +374,10 @@ public class CommonSenseMedia extends SiteScraper {
                 } catch (NumberFormatException e) {
                     getLogger().log(Level.WARNING, "Unable to parse number of pages: `" + pagesString + "`.", e);
                 }
-            } else //noinspection StatementWithEmptyBody
-                if (detailsText.startsWith("Available on:")) {
+            } else if (detailsText.startsWith("Available on:")) {
                 // Do nothing.
+            } else if (detailsText.startsWith("Award:") || detailsText.startsWith("Awards:")) {
+                // Not useful.
             } else {
                 getLogger().log(Level.WARNING, "Unknown book details prefix: `" + detailsText + "`.");
             }
