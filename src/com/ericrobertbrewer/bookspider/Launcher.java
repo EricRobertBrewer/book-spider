@@ -1,9 +1,5 @@
 package com.ericrobertbrewer.bookspider;
 
-import com.ericrobertbrewer.bookspider.sites.SiteScraper;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.chrome.ChromeDriver;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.logging.FileHandler;
@@ -17,10 +13,10 @@ public class Launcher {
         if (args.length < 1 || args.length > 2) {
             throw new IllegalArgumentException("Usage: <driver-path> [force]");
         }
-        // Create web driver.
+        // Create web driver factory.
+		final WebDriverFactory factory = new WebDriverFactory();
         final String driverPath = args[0];
-        System.setProperty("webdriver.chrome.driver", driverPath);
-	    final WebDriver driver = new ChromeDriver();
+        factory.enableChromeDriver(driverPath);
 	    // Check `force` flag.
         final boolean force;
         if (args.length > 1) {
@@ -29,7 +25,7 @@ public class Launcher {
             force = false;
         }
 	    // Create logger.
-	    final String id = Folders.ID_NY_TIMES;
+	    final String id = creator.getId();
 		final Logger logger = Logger.getLogger(creator.getScraperClass().getSimpleName());
 		final File logFile = Folders.getLogFile(id);
 		final FileHandler fileHandler = new FileHandler(logFile.getPath());
@@ -41,8 +37,7 @@ public class Launcher {
 		// Create site scraper.
 		final SiteScraper siteScraper = creator.newInstance(logger);
 	    System.out.println("Starting scrape...");
-	    siteScraper.scrape(driver, contentFolder, force);
-	    driver.quit();
+	    siteScraper.scrape(factory, contentFolder, force);
 	    fileHandler.close();
 	    System.out.println("Done.");
     }

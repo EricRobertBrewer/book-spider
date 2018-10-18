@@ -6,7 +6,7 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 
-class Folders {
+public class Folders {
 
     private static final String SLASH = File.separator;
 
@@ -19,7 +19,8 @@ class Folders {
      */
     private static final String LOGS_ROOT = "logs" + SLASH;
 
-    static final String ID_NY_TIMES = "nytimes";
+    public static final String ID_NY_TIMES = "nytimes";
+    public static final String ID_COMMON_SENSE_MEDIA = "commonsensemedia";
 
     static File getContentFolder(String id) throws IOException {
         final File folder = new File(CONTENT_ROOT + id + SLASH);

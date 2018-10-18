@@ -1,12 +1,18 @@
 package com.ericrobertbrewer.bookspider.sites;
 
+import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
+import com.ericrobertbrewer.bookspider.SiteScraper;
+import com.ericrobertbrewer.bookspider.WebDriverFactory;
 import com.ericrobertbrewer.web.DriverUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 
-import java.io.*;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -26,6 +32,11 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
             @Override
             public SiteScraper newInstance(Logger logger) {
                 return new NewYorkTimesFirstChapters(logger);
+            }
+
+            @Override
+            public String getId() {
+                return Folders.ID_NY_TIMES;
             }
         });
     }
@@ -53,8 +64,9 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriver driver, File contentFolder, boolean force) {
+    public void scrape(WebDriverFactory factory, File contentFolder, boolean force) {
         getLogger().log(Level.INFO, "Scraping New York Times first chapters.");
+        final WebDriver driver = factory.newChromeDriver();
         // Set timeout for obsolete API call (to
         // `http://barnesandnoble.bfast.com/booklink/serve?sourceid=4773&categoryid=nytsearch`).
         driver.manage().timeouts().setScriptTimeout(1000L, TimeUnit.MILLISECONDS);
@@ -114,6 +126,7 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
             scrapeBook(driver, contentFolder, bookItem, contentsWriter, force);
         }
         contentsWriter.close();
+        driver.quit();
     }
 
     private void scrapeBook(WebDriver driver, File contentFolder, BookItem bookItem, PrintWriter contentsWriter, boolean force) {
