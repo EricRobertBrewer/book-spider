@@ -1,5 +1,6 @@
 package com.ericrobertbrewer.bookspider.sites;
 
+import com.ericrobertbrewer.bookspider.AbstractDatabaseHelper;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.SiteScraper;
@@ -12,12 +13,14 @@ import org.openqa.selenium.WebElement;
 
 import java.io.*;
 import java.nio.file.Files;
-import java.sql.*;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.Date;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -98,7 +101,7 @@ public class CommonSenseMedia extends SiteScraper {
         } catch (ClassNotFoundException e) {
             getLogger().log(Level.SEVERE, "Unable to find suitable SQLite driver (JDBC).", e);
         }
-        final DatabaseHelper databaseHelper = new DatabaseHelper();
+        final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
         // Create a separate thread to scrape books.
         final Thread scrapeThread = new Thread(() -> {
             final WebDriver scrapeDriver = factory.newChromeDriver();
@@ -416,42 +419,12 @@ public class CommonSenseMedia extends SiteScraper {
         String explanation = null;
     }
 
-    private class DatabaseHelper {
+    private static class DatabaseHelper extends AbstractDatabaseHelper {
         private static final String TABLE_BOOKS = "Books";
         private static final String TABLE_BOOK_CATEGORIES = "BookCategories";
 
-        private Connection connection = null;
-
-        DatabaseHelper() {
-        }
-
-        void connect(String fileName) {
-            try {
-                connection = DriverManager.getConnection("jdbc:sqlite:" + fileName);
-            } catch (SQLException e) {
-                getLogger().log(Level.SEVERE, "Unable to connect to database: `" + fileName + "`.", e);
-            }
-        }
-
-        boolean isConnected() {
-            if (connection == null) {
-                return false;
-            }
-            try {
-                return !connection.isClosed();
-            } catch (SQLException e) {
-                getLogger().log(Level.SEVERE, "Unable to query whether database connection is closed.", e);
-            }
-            return false;
-        }
-
-        void close() {
-            try {
-                connection.close();
-                connection = null;
-            } catch (SQLException e) {
-                getLogger().log(Level.SEVERE, "Unable to close database connection.", e);
-            }
+        DatabaseHelper(Logger logger) {
+            super(logger);
         }
 
         boolean shouldUpdateBook(String id) throws SQLException {
@@ -461,7 +434,7 @@ public class CommonSenseMedia extends SiteScraper {
 
         boolean bookExists(String id) throws SQLException {
             ensureTableExists(DatabaseHelper.TABLE_BOOKS);
-            final PreparedStatement s = connection.prepareStatement(
+            final PreparedStatement s = getConnection().prepareStatement(
                     "SELECT id\n" +
                     " FROM " + DatabaseHelper.TABLE_BOOKS + "\n" +
                     " WHERE id=?;");
@@ -474,7 +447,7 @@ public class CommonSenseMedia extends SiteScraper {
 
         int insertBook(Book book) throws SQLException {
             ensureTableExists(TABLE_BOOKS);
-            final PreparedStatement s = connection.prepareStatement(
+            final PreparedStatement s = getConnection().prepareStatement(
                     "INSERT INTO " + TABLE_BOOKS +
                     "(id,title,authors,illustrators,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
                     " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
@@ -504,7 +477,7 @@ public class CommonSenseMedia extends SiteScraper {
 
         int insertBookCategory(BookCategory bookCategory) throws SQLException {
             ensureTableExists(TABLE_BOOK_CATEGORIES);
-            final PreparedStatement s = connection.prepareStatement(
+            final PreparedStatement s = getConnection().prepareStatement(
                     "INSERT INTO " + TABLE_BOOK_CATEGORIES +
                     "(book_id,category_id,level,explanation)\n" +
                     "VALUES(?,?,?,?);");
@@ -517,9 +490,10 @@ public class CommonSenseMedia extends SiteScraper {
             return r;
         }
 
-        private void ensureTableExists(String name) throws SQLException {
+        @Override
+        public void ensureTableExists(String name) throws SQLException {
             if (TABLE_BOOKS.equalsIgnoreCase(name)) {
-                final Statement statement = connection.createStatement();
+                final Statement statement = getConnection().createStatement();
                 statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (\n" +
                         " id TEXT PRIMARY KEY,\n" + // the-unwanted-stories-of-the-syrian-refugees
                         " title TEXT NOT NULL,\n" + // The Unwanted: Stories of the Syrian Refugees
@@ -542,7 +516,7 @@ public class CommonSenseMedia extends SiteScraper {
                         " last_updated INTEGER NOT NULL\n" + // System.currentTimeMillis() -> long
                         ");");
             } else if (TABLE_BOOK_CATEGORIES.equalsIgnoreCase(name)) {
-                final Statement statement = connection.createStatement();
+                final Statement statement = getConnection().createStatement();
                 statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_CATEGORIES + " (\n" +
                         " book_id TEXT NOT NULL,\n" + // the-unwanted-stories-of-the-syrian-refugees
                         " category_id TEXT NOT NULL,\n" +
@@ -551,14 +525,6 @@ public class CommonSenseMedia extends SiteScraper {
                         ");");
             } else {
                 throw new IllegalArgumentException("Unknown table name: `" + name + "`.");
-            }
-        }
-
-        private void setStringOrNull(PreparedStatement s, int parameterIndex, String value) throws SQLException {
-            if (value != null) {
-                s.setString(parameterIndex, value);
-            } else {
-                s.setNull(parameterIndex, Types.VARCHAR);
             }
         }
     }
