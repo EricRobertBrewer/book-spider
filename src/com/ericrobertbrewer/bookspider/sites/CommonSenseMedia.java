@@ -18,6 +18,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.Date;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -49,6 +50,8 @@ public class CommonSenseMedia extends SiteScraper {
     private static final String DETAILS_URL = "https://www.commonsensemedia.org/book-reviews/";
     private static final DateFormat PUBLICATION_DATE_FORMAT_WEB = new SimpleDateFormat("MMMM d, yyyy", Locale.US);
     private static final DateFormat PUBLICATION_DATE_FORMAT_DATABASE = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
+
+    private final AtomicBoolean isExploringFrontier = new AtomicBoolean(false);
 
     private CommonSenseMedia(Logger logger) {
         super(logger);
@@ -82,6 +85,13 @@ public class CommonSenseMedia extends SiteScraper {
             getLogger().log(Level.SEVERE, "Unable to write to frontier file.", e);
             return;
         }
+        // Populate the frontier.
+        final Thread frontierThread = new Thread(() -> {
+            final WebDriver frontierDriver = factory.newChromeDriver();
+            exploreFrontier(frontierDriver, frontier, frontierOut);
+            frontierDriver.quit();
+        }, "frontier");
+        frontierThread.start();
         // Create DatabaseHelper.
         try {
             Class.forName("org.sqlite.JDBC");
@@ -98,19 +108,17 @@ public class CommonSenseMedia extends SiteScraper {
             scrapeDriver.quit();
         }, "scrape");
         scrapeThread.start();
-        // Populate the frontier (on the main thread).
-        final WebDriver frontierDriver = factory.newChromeDriver();
-        exploreFrontier(frontierDriver, frontier, frontierWriter);
-        frontierDriver.quit();
     }
 
     /**
-     * Performed by the frontier (main) thread.
+     * Performed by the frontier thread.
      * @param driver Driver.
      * @param frontier Queue of book IDs to scrape.
      * @param frontierOut Writer to file which contains unique book IDs.
      */
     private void exploreFrontier(WebDriver driver, Queue<String> frontier, PrintStream frontierOut) {
+        // Prevent the scrape thread from quitting.
+        isExploringFrontier.set(true);
         // Keep a running set of book IDs to avoid writing duplicates.
         final Set<String> frontierSet = new HashSet<>(frontier);
         // Simply scrape each page.
@@ -151,6 +159,7 @@ public class CommonSenseMedia extends SiteScraper {
                 break;
             }
         }
+        isExploringFrontier.set(false);
         getLogger().log(Level.INFO, "Collected " + frontierSet.size() + " unique book IDs, ending on page " + page + ".");
     }
 
@@ -162,19 +171,18 @@ public class CommonSenseMedia extends SiteScraper {
      *                       This method does not close the connection to the database.
      */
     private void scrapeBooks(WebDriver driver, Queue<String> frontier, DatabaseHelper databaseHelper) {
-        // Wait for frontier to populate a little.
-        while (frontier.size() < 11) {
-            try {
-                Thread.sleep(5000L);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
         // Start scraping.
-        // It is assumed that the frontier will be populated faster than book details can be scraped.
-        // Thus, it is assumed that when the frontier becomes empty after having been non-empty, we can safely quit.
         getLogger().log(Level.INFO, "Scraping details...");
-        while (!frontier.isEmpty()) {
+        while (isExploringFrontier.get() || !frontier.isEmpty()) {
+            // Wait for frontier to populate before polling.
+            if (frontier.isEmpty()) {
+                try {
+                    Thread.sleep(5000L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                continue;
+            }
             final String bookId = frontier.poll();
             try {
                 scrapeBook(driver, bookId, databaseHelper);
