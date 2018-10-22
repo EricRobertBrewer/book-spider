@@ -3,7 +3,7 @@ package com.ericrobertbrewer.bookspider.sites;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.SiteScraper;
-import com.ericrobertbrewer.bookspider.WebDriverFactory;
+import com.ericrobertbrewer.web.WebDriverFactory;
 import com.ericrobertbrewer.web.DriverUtils;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;

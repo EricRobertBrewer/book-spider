@@ -1,5 +1,7 @@
 package com.ericrobertbrewer.bookspider;
 
+import com.ericrobertbrewer.web.WebDriverFactory;
+
 import java.io.File;
 import java.util.logging.Logger;
 

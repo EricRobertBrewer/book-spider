@@ -1,4 +1,4 @@
-package com.ericrobertbrewer.bookspider;
+package com.ericrobertbrewer.web;
 
 import org.openqa.selenium.chrome.ChromeDriver;
 
