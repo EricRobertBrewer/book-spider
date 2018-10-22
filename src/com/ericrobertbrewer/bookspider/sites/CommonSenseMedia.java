@@ -10,10 +10,7 @@ import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.io.PrintWriter;
+import java.io.*;
 import java.nio.file.Files;
 import java.sql.*;
 import java.text.DateFormat;
@@ -78,10 +75,10 @@ public class CommonSenseMedia extends SiteScraper {
             }
         }
         // Create PrintWriter.
-        final PrintWriter frontierWriter;
+        final PrintStream frontierOut;
         try {
-            frontierWriter = new PrintWriter(new FileWriter(frontierFile, exists));
-        } catch (IOException e) {
+            frontierOut = new PrintStream(new FileOutputStream(frontierFile, exists));
+        } catch (FileNotFoundException e) {
             getLogger().log(Level.SEVERE, "Unable to write to frontier file.", e);
             return;
         }
@@ -111,9 +108,9 @@ public class CommonSenseMedia extends SiteScraper {
      * Performed by the frontier (main) thread.
      * @param driver Driver.
      * @param frontier Queue of book IDs to scrape.
-     * @param frontierWriter Writer to file which contains unique book IDs.
+     * @param frontierOut Writer to file which contains unique book IDs.
      */
-    private void exploreFrontier(WebDriver driver, Queue<String> frontier, PrintWriter frontierWriter) {
+    private void exploreFrontier(WebDriver driver, Queue<String> frontier, PrintStream frontierOut) {
         // Keep a running set of book IDs to avoid writing duplicates.
         final Set<String> frontierSet = new HashSet<>(frontier);
         // Simply scrape each page.
@@ -138,7 +135,7 @@ public class CommonSenseMedia extends SiteScraper {
                     final String bookId = url.substring(url.lastIndexOf("/") + 1);
                     if (!frontierSet.contains(bookId)) {
                         frontier.add(bookId);
-                        frontierWriter.println(bookId);
+                        frontierOut.println(bookId);
                         frontierSet.add(bookId);
                     }
                 } catch (NoSuchElementException e) {
