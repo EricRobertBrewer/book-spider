@@ -189,9 +189,8 @@ public class CommonSenseMedia extends SiteScraper {
 
     @SuppressWarnings("StatementWithEmptyBody")
     private void scrapeBook(WebDriver driver, String bookId, DatabaseHelper databaseHelper) throws SQLException, NoSuchElementException {
-        // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
-        // Ignore books which have already been scraped.
-        if (databaseHelper.bookExists(bookId)) {
+        // Ignore books which are fresh enough.
+        if (!databaseHelper.shouldUpdateBook(bookId)) {
             return;
         }
         // Scrape this book.
@@ -445,6 +444,11 @@ public class CommonSenseMedia extends SiteScraper {
             } catch (SQLException e) {
                 getLogger().log(Level.SEVERE, "Unable to close database connection.", e);
             }
+        }
+
+        boolean shouldUpdateBook(String id) throws SQLException {
+            // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
+            return !bookExists(id);
         }
 
         boolean bookExists(String id) throws SQLException {
