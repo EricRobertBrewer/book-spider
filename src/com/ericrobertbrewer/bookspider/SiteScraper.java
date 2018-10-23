@@ -7,7 +7,7 @@ import java.util.logging.Logger;
 
 public abstract class SiteScraper {
 
-    public interface Creator {
+    public interface Provider {
         Class<? extends SiteScraper> getScraperClass();
         SiteScraper newInstance(Logger logger);
         String getId();

@@ -11,7 +11,7 @@ import java.util.logging.SimpleFormatter;
 
 public class Launcher {
 
-    public static void launch(String[] args, SiteScraper.Creator creator) throws IOException {
+    public static void launch(String[] args, SiteScraper.Provider provider) throws IOException {
         if (args.length < 1 || args.length > 2) {
             throw new IllegalArgumentException("Usage: <driver-path> [force]");
         }
@@ -27,8 +27,8 @@ public class Launcher {
             force = false;
         }
 	    // Create logger.
-	    final String id = creator.getId();
-		final Logger logger = Logger.getLogger(creator.getScraperClass().getSimpleName());
+	    final String id = provider.getId();
+		final Logger logger = Logger.getLogger(provider.getScraperClass().getSimpleName());
 		final File logFile = Folders.getLogFile(id);
 		final FileHandler fileHandler = new FileHandler(logFile.getPath());
 		logger.addHandler(fileHandler);
@@ -37,7 +37,7 @@ public class Launcher {
 		// Create content folder.
 	    final File contentFolder = Folders.getContentFolder(id);
 		// Create site scraper.
-		final SiteScraper siteScraper = creator.newInstance(logger);
+		final SiteScraper siteScraper = provider.newInstance(logger);
 	    System.out.println("Starting scrape...");
 	    siteScraper.scrape(factory, contentFolder, force);
 	    fileHandler.close();

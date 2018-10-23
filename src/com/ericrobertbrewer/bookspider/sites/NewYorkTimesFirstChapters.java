@@ -23,7 +23,7 @@ import java.util.logging.Logger;
 public class NewYorkTimesFirstChapters extends SiteScraper {
 
     public static void main(String[] args) throws IOException {
-        Launcher.launch(args, new Creator() {
+        Launcher.launch(args, new Provider() {
             @Override
             public Class<? extends SiteScraper> getScraperClass() {
                 return NewYorkTimesFirstChapters.class;
