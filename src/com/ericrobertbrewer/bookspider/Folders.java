@@ -19,8 +19,9 @@ public class Folders {
      */
     private static final String LOGS_ROOT = "logs" + SLASH;
 
-    public static final String ID_NY_TIMES = "nytimes";
+    public static final String ID_BOOK_CAVE = "bookcave";
     public static final String ID_COMMON_SENSE_MEDIA = "commonsensemedia";
+    public static final String ID_NY_TIMES = "nytimes";
 
     static File getContentFolder(String id) throws IOException {
         final File folder = new File(CONTENT_ROOT + id + SLASH);
