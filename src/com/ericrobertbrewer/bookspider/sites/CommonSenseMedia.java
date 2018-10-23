@@ -295,19 +295,25 @@ public class CommonSenseMedia extends SiteScraper {
         final WebElement goodTextDiv = goodDiv.findElement(By.className("field-name-field-any-good"));
         book.good = goodTextDiv.getAttribute("textContent").trim();
         // Extract 'Talk to Your Kids About...'.
-        final WebElement talkDiv = contentMidMainDiv.findElement(By.className("pane-node-field-family-topics"));
-        final WebElement talkTextDiv = talkDiv.findElement(By.className("field-name-field-family-topics"));
-        final WebElement talkTextListUl = talkTextDiv.findElement(By.className("textformatter-list"));
-        final StringBuilder talk = new StringBuilder();
-        final List<WebElement> talkTextLis = talkTextListUl.findElements(By.tagName("li"));
-        for (WebElement talkTextLi : talkTextLis) {
-            final String talkLiText = talkTextLi.getAttribute("textContent").trim();
-            if (talk.length() > 0) {
-                talk.append("||");
+        try {
+            final WebElement talkDiv = contentMidMainDiv.findElement(By.className("pane-node-field-family-topics"));
+            final WebElement talkTextDiv = talkDiv.findElement(By.className("field-name-field-family-topics"));
+            final WebElement talkTextListUl = talkTextDiv.findElement(By.className("textformatter-list"));
+            final StringBuilder talk = new StringBuilder();
+            final List<WebElement> talkTextLis = talkTextListUl.findElements(By.tagName("li"));
+            for (WebElement talkTextLi : talkTextLis) {
+                final String talkLiText = talkTextLi.getAttribute("textContent").trim();
+                if (talk.length() > 0) {
+                    talk.append("||");
+                }
+                talk.append(talkLiText);
             }
-            talk.append(talkLiText);
+            book.talk = talk.toString();
+        } catch (NoSuchElementException e) {
+            // May not exist.
+            // See `https://www.commonsensemedia.org/book-reviews/an-awesome-book-of-love`.
+            getLogger().log(Level.WARNING, "Unable to find 'Talk to your kids about...` section.", e);
         }
-        book.talk = talk.toString();
         // Extract authors, illustrators, genre, topics, type, publishers, publishing date, pages.
         final WebElement detailsDiv = contentMidMainDiv.findElement(By.className("pane-product-details"));
         final WebElement detailsUl = detailsDiv.findElement(By.id("review-product-details-list"));
