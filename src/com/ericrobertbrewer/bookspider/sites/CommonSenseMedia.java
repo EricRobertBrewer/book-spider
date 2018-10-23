@@ -441,16 +441,7 @@ public class CommonSenseMedia extends SiteScraper {
         }
 
         boolean bookExists(String id) throws SQLException {
-            ensureTableExists(DatabaseHelper.TABLE_BOOKS);
-            final PreparedStatement s = getConnection().prepareStatement(
-                    "SELECT id\n" +
-                    " FROM " + DatabaseHelper.TABLE_BOOKS + "\n" +
-                    " WHERE id=?;");
-            s.setString(1, id);
-            final ResultSet r = s.executeQuery();
-            final boolean exists = r.next();
-            s.close();  // Also closes `r`.
-            return exists;
+            return recordExists(TABLE_BOOKS, "id", id);
         }
 
         int insertBook(Book book) throws SQLException {
