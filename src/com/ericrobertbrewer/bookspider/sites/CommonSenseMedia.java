@@ -122,43 +122,64 @@ public class CommonSenseMedia extends SiteScraper {
         final Set<String> frontierSet = new HashSet<>(frontier);
         // Simply scrape each page.
         int page = 0;
-        while (true) {
-            driver.navigate().to("https://www.commonsensemedia.org/book-reviews?page=" + page);
-            // Allow page elements to load.
-            try {
-                Thread.sleep(1000L);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            DriverUtils.scrollDown(driver, 40, 50L);
-            // Scrape each item's book ID.
-            final WebElement reviewsBrowseDiv = driver.findElement(By.className("view-display-id-ctools_context_reviews_browse"));
-            final WebElement viewContentDiv = reviewsBrowseDiv.findElement(By.className("view-content"));
-            final List<WebElement> viewsRows = viewContentDiv.findElements(By.className("views-row"));
-            for (WebElement viewsRow : viewsRows) {
+        boolean hasReachedEnd = false;
+        while (!hasReachedEnd) {
+            int retries = 3;
+            while (retries > 0) {
                 try {
-                    final WebElement csmButtonA = viewsRow.findElement(By.className("csm-button"));
-                    final String url = csmButtonA.getAttribute("href");
-                    final String bookId = getLastUrlComponent(url);
-                    if (!frontierSet.contains(bookId)) {
-                        frontier.add(bookId);
-                        frontierOut.println(bookId);
-                        frontierSet.add(bookId);
+                    hasReachedEnd = exploreFrontierPage(driver, frontier, frontierSet, frontierOut, page);
+                    break;
+                } catch (TimeoutException e) {
+                    getLogger().log(Level.WARNING, "Received timeout while exploring frontier at page " + page + ".", e);
+                    try {
+                        // Give the site 10 seconds to recover.
+                        Thread.sleep(10000L);
+                    } catch (InterruptedException ie) {
+                        ie.printStackTrace();
                     }
-                } catch (NoSuchElementException e) {
-                    getLogger().log(Level.WARNING, "Could not find 'Continue Reading' button on page " + page + ".", e);
                 }
+                retries--;
             }
-            // Quit when the "last page" link disappears.
-            final WebElement pagerUl = reviewsBrowseDiv.findElement(By.className("pager"));
-            try {
-                pagerUl.findElement(By.className("pager-last"));
-                page++;
-            } catch (NoSuchElementException e) {
-                break;
-            }
+            page++;
         }
         getLogger().log(Level.INFO, "Collected " + frontierSet.size() + " unique book IDs, ending on page " + page + ".");
+    }
+
+    private boolean exploreFrontierPage(WebDriver driver, Queue<String> frontier, Set<String> frontierSet, PrintStream frontierOut, int page) {
+        driver.navigate().to("https://www.commonsensemedia.org/book-reviews?page=" + page);
+        // Allow page elements to load.
+        try {
+            Thread.sleep(1000L);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        DriverUtils.scrollDown(driver, 40, 50L);
+        // Scrape each item's book ID.
+        final WebElement reviewsBrowseDiv = driver.findElement(By.className("view-display-id-ctools_context_reviews_browse"));
+        final WebElement viewContentDiv = reviewsBrowseDiv.findElement(By.className("view-content"));
+        final List<WebElement> viewsRows = viewContentDiv.findElements(By.className("views-row"));
+        for (WebElement viewsRow : viewsRows) {
+            try {
+                final WebElement csmButtonA = viewsRow.findElement(By.className("csm-button"));
+                final String url = csmButtonA.getAttribute("href");
+                final String bookId = getLastUrlComponent(url);
+                if (!frontierSet.contains(bookId)) {
+                    frontier.add(bookId);
+                    frontierOut.println(bookId);
+                    frontierSet.add(bookId);
+                }
+            } catch (NoSuchElementException e) {
+                getLogger().log(Level.WARNING, "Could not find 'Continue Reading' button on page " + page + ".", e);
+            }
+        }
+        // Quit when the "last page" link disappears.
+        final WebElement pagerUl = reviewsBrowseDiv.findElement(By.className("pager"));
+        try {
+            pagerUl.findElement(By.className("pager-last"));
+        } catch (NoSuchElementException e) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -193,6 +214,12 @@ public class CommonSenseMedia extends SiteScraper {
                     getLogger().log(Level.WARNING, "Unable to find web element for book `" + bookId + "`.", e);
                 } catch (TimeoutException e) {
                     getLogger().log(Level.WARNING, "Received timeout while scraping book `" + bookId + "`.", e);
+                    try {
+                        // Give the site 10 seconds to recover.
+                        Thread.sleep(10000L);
+                    } catch (InterruptedException ie) {
+                        ie.printStackTrace();
+                    }
                 }
                 retries--;
             }
