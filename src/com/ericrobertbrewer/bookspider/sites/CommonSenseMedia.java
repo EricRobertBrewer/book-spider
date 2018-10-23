@@ -130,6 +130,8 @@ public class CommonSenseMedia extends SiteScraper {
                 try {
                     hasReachedEnd = exploreFrontierPage(driver, frontier, frontierSet, frontierOut, page);
                     break;
+                } catch (NoSuchElementException e) {
+                    getLogger().log(Level.WARNING, "Unable to find web element while exploring frontier at page " + page + ".", e);
                 } catch (TimeoutException e) {
                     getLogger().log(Level.WARNING, "Received timeout while exploring frontier at page " + page + ".", e);
                     try {
