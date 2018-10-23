@@ -6,15 +6,12 @@ import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.SiteScraper;
 import com.ericrobertbrewer.web.DriverUtils;
 import com.ericrobertbrewer.web.WebDriverFactory;
-import org.openqa.selenium.By;
+import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
 
 import java.io.*;
 import java.nio.file.Files;
 import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.text.DateFormat;
@@ -138,7 +135,7 @@ public class CommonSenseMedia extends SiteScraper {
                 try {
                     final WebElement csmButtonA = viewsRow.findElement(By.className("csm-button"));
                     final String url = csmButtonA.getAttribute("href");
-                    final String bookId = url.substring(url.lastIndexOf("/") + 1);
+                    final String bookId = getLastUrlComponent(url);
                     if (!frontierSet.contains(bookId)) {
                         frontier.add(bookId);
                         frontierOut.println(bookId);

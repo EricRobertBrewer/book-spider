@@ -13,6 +13,13 @@ public abstract class SiteScraper {
         String getId();
     }
 
+    protected static String getLastUrlComponent(String url) {
+        if (url.endsWith("/")) {
+            return getLastUrlComponent(url.substring(0, url.length() - 1));
+        }
+        return url.substring(url.lastIndexOf("/") + 1);
+    }
+
     private final Logger logger;
 
     protected SiteScraper(Logger logger) {
