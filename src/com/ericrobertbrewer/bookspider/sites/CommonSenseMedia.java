@@ -14,6 +14,7 @@ import java.nio.file.Files;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.Types;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -450,7 +451,7 @@ public class CommonSenseMedia extends SiteScraper {
     private static class BookCategory {
         String bookId;
         String categoryId;
-        int level = -1;
+        int level;
         String explanation = null;
     }
 
@@ -473,47 +474,51 @@ public class CommonSenseMedia extends SiteScraper {
 
         int insertBook(Book book) throws SQLException {
             ensureTableExists(TABLE_BOOKS);
-            final PreparedStatement s = getConnection().prepareStatement(
+            final PreparedStatement insert = getConnection().prepareStatement(
                     "INSERT INTO " + TABLE_BOOKS +
                     "(id,title,authors,illustrators,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
                     " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
-            s.setString(1, book.id);
-            s.setString(2, book.title);
-            s.setString(3, book.authors);
-            setStringOrNull(s, 4, book.illustrators);
-            s.setString(5, book.age);
-            s.setInt(6, book.stars);
-            s.setString(7, book.kicker);
-            s.setString(8, book.genre);
-            setStringOrNull(s, 9, book.topics);
-            s.setString(10, book.type);
-            setStringOrNull(s, 11, book.know);
-            setStringOrNull(s, 12, book.story);
-            setStringOrNull(s, 13, book.good);
-            setStringOrNull(s, 14, book.talk);
-            setStringOrNull(s, 15, book.publishers);
-            setStringOrNull(s, 16, book.publicationDate);
-            setStringOrNull(s, 17, book.publishersRecommendedAges);
-            s.setInt(18, book.pages);
-            s.setLong(19, book.lastUpdated);
-            final int r = s.executeUpdate();
-            s.close();
-            return r;
+            insert.setString(1, book.id);
+            insert.setString(2, book.title);
+            insert.setString(3, book.authors);
+            setStringOrNull(insert, 4, book.illustrators);
+            insert.setString(5, book.age);
+            insert.setInt(6, book.stars);
+            insert.setString(7, book.kicker);
+            insert.setString(8, book.genre);
+            setStringOrNull(insert, 9, book.topics);
+            insert.setString(10, book.type);
+            setStringOrNull(insert, 11, book.know);
+            setStringOrNull(insert, 12, book.story);
+            setStringOrNull(insert, 13, book.good);
+            setStringOrNull(insert, 14, book.talk);
+            setStringOrNull(insert, 15, book.publishers);
+            setStringOrNull(insert, 16, book.publicationDate);
+            setStringOrNull(insert, 17, book.publishersRecommendedAges);
+            if (book.pages != -1) {
+                insert.setInt(18, book.pages);
+            } else {
+                insert.setNull(18, Types.INTEGER);
+            }
+            insert.setLong(19, book.lastUpdated);
+            final int result = insert.executeUpdate();
+            insert.close();
+            return result;
         }
 
         int insertBookCategory(BookCategory bookCategory) throws SQLException {
             ensureTableExists(TABLE_BOOK_CATEGORIES);
-            final PreparedStatement s = getConnection().prepareStatement(
+            final PreparedStatement insert = getConnection().prepareStatement(
                     "INSERT INTO " + TABLE_BOOK_CATEGORIES +
                     "(book_id,category_id,level,explanation)\n" +
-                    "VALUES(?,?,?,?);");
-            s.setString(1, bookCategory.bookId);
-            s.setString(2, bookCategory.categoryId);
-            s.setInt(3, bookCategory.level);
-            setStringOrNull(s, 4, bookCategory.explanation);
-            final int r = s.executeUpdate();
-            s.close();
-            return r;
+                    " VALUES(?,?,?,?);");
+            insert.setString(1, bookCategory.bookId);
+            insert.setString(2, bookCategory.categoryId);
+            insert.setInt(3, bookCategory.level);
+            setStringOrNull(insert, 4, bookCategory.explanation);
+            final int result = insert.executeUpdate();
+            insert.close();
+            return result;
         }
 
         @Override
