@@ -96,11 +96,6 @@ public class CommonSenseMedia extends SiteScraper {
         }, "frontier");
         frontierThread.start();
         // Create DatabaseHelper.
-        try {
-            Class.forName("org.sqlite.JDBC");
-        } catch (ClassNotFoundException e) {
-            getLogger().log(Level.SEVERE, "Unable to find suitable SQLite driver (JDBC).", e);
-        }
         final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
         // Create a separate thread to scrape books.
         final Thread scrapeThread = new Thread(() -> {
