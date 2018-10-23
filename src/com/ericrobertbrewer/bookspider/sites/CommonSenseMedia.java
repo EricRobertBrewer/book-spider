@@ -182,12 +182,19 @@ public class CommonSenseMedia extends SiteScraper {
                 continue;
             }
             final String bookId = frontier.poll();
-            try {
-                scrapeBook(driver, bookId, databaseHelper);
-            } catch (SQLException e) {
-                getLogger().log(Level.SEVERE, "SQLException thrown while scraping book `" + bookId + "`.", e);
-            } catch (NoSuchElementException e) {
-                getLogger().log(Level.WARNING, "Unable to find web element for book `" + bookId + "`.", e);
+            int retries = 3;
+            while (retries > 0) {
+                try {
+                    scrapeBook(driver, bookId, databaseHelper);
+                    break;
+                } catch (SQLException e) {
+                    getLogger().log(Level.SEVERE, "SQLException thrown while scraping book `" + bookId + "`.", e);
+                } catch (NoSuchElementException e) {
+                    getLogger().log(Level.WARNING, "Unable to find web element for book `" + bookId + "`.", e);
+                } catch (TimeoutException e) {
+                    getLogger().log(Level.WARNING, "Received timeout while scraping book `" + bookId + "`.", e);
+                }
+                retries--;
             }
         }
         getLogger().log(Level.INFO, "Done scraping details.");
