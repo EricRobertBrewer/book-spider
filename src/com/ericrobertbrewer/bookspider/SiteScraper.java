@@ -33,8 +33,9 @@ public abstract class SiteScraper {
      * @param force When `true`, all web pages will be scraped whether or not the corresponding content file already exists.
      *              Else, only those pages whose content files do not exist will be scraped.
      *              Default is `false`.
+     * @param callback Used to notify the Launcher that scraping is complete, so that it can close and release resources.
      */
-    public abstract void scrape(WebDriverFactory factory, File contentFolder, boolean force);
+    public abstract void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback);
 
     protected Logger getLogger() {
         return logger;

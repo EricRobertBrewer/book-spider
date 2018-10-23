@@ -11,6 +11,10 @@ import java.util.logging.SimpleFormatter;
 
 public class Launcher {
 
+	public interface Callback {
+		void onComplete();
+	}
+
     public static void launch(String[] args, SiteScraper.Provider provider) throws IOException {
         if (args.length < 1 || args.length > 2) {
             throw new IllegalArgumentException("Usage: <driver-path> [force]");
@@ -39,8 +43,9 @@ public class Launcher {
 		// Create site scraper.
 		final SiteScraper siteScraper = provider.newInstance(logger);
 	    System.out.println("Starting scrape...");
-	    siteScraper.scrape(factory, contentFolder, force);
-	    fileHandler.close();
-	    System.out.println("Done.");
+	    siteScraper.scrape(factory, contentFolder, force, () -> {
+			fileHandler.close();
+			System.out.println("Done.");
+		});
     }
 }

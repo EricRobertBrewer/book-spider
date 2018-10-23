@@ -64,7 +64,7 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force) {
+    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
         getLogger().log(Level.INFO, "Scraping New York Times first chapters.");
         final WebDriver driver = factory.newChromeDriver();
         // Set timeout for obsolete API call (to
@@ -127,6 +127,7 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
         }
         contentsWriter.close();
         driver.quit();
+        callback.onComplete();
     }
 
     private void scrapeBook(WebDriver driver, File contentFolder, BookItem bookItem, PrintWriter contentsWriter, boolean force) {

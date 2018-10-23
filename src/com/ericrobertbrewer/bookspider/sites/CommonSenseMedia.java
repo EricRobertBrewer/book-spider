@@ -43,22 +43,18 @@ public class CommonSenseMedia extends SiteScraper {
         });
     }
 
-    /**
-     * The beginning of the URL of the book detail page.
-     * Used like: `DETAILS_URL` + `bookId`.
-     */
-    private static final String DETAILS_URL = "https://www.commonsensemedia.org/book-reviews/";
     private static final DateFormat PUBLICATION_DATE_FORMAT_WEB = new SimpleDateFormat("MMMM d, yyyy", Locale.US);
     private static final DateFormat PUBLICATION_DATE_FORMAT_DATABASE = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private final AtomicBoolean isExploringFrontier = new AtomicBoolean(false);
+    private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
 
     private CommonSenseMedia(Logger logger) {
         super(logger);
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force) {
+    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, final Launcher.Callback callback) {
         if (force) {
             throw new IllegalArgumentException("CommonSenseMedia does not support `force`=`true`.");
         }
@@ -87,20 +83,30 @@ public class CommonSenseMedia extends SiteScraper {
         }
         // Populate the frontier.
         final Thread frontierThread = new Thread(() -> {
+            isExploringFrontier.set(true);
             final WebDriver frontierDriver = factory.newChromeDriver();
             exploreFrontier(frontierDriver, frontier, frontierOut);
             frontierDriver.quit();
+            isExploringFrontier.set(false);
+            if (!isScrapingBooks.get()) {
+                callback.onComplete();
+            }
         }, "frontier");
         frontierThread.start();
         // Create DatabaseHelper.
         final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
         // Create a separate thread to scrape books.
         final Thread scrapeThread = new Thread(() -> {
+            isScrapingBooks.set(true);
             final WebDriver scrapeDriver = factory.newChromeDriver();
             databaseHelper.connect(contentFolder.getPath() + Folders.SLASH + "contents.db");
             scrapeBooks(scrapeDriver, frontier, databaseHelper);
             databaseHelper.close();
             scrapeDriver.quit();
+            isScrapingBooks.set(false);
+            if (!isExploringFrontier.get()) {
+                callback.onComplete();
+            }
         }, "scrape");
         scrapeThread.start();
     }
@@ -112,8 +118,6 @@ public class CommonSenseMedia extends SiteScraper {
      * @param frontierOut Writer to file which contains unique book IDs.
      */
     private void exploreFrontier(WebDriver driver, Queue<String> frontier, PrintStream frontierOut) {
-        // Prevent the scrape thread from quitting.
-        isExploringFrontier.set(true);
         // Keep a running set of book IDs to avoid writing duplicates.
         final Set<String> frontierSet = new HashSet<>(frontier);
         // Simply scrape each page.
@@ -154,7 +158,6 @@ public class CommonSenseMedia extends SiteScraper {
                 break;
             }
         }
-        isExploringFrontier.set(false);
         getLogger().log(Level.INFO, "Collected " + frontierSet.size() + " unique book IDs, ending on page " + page + ".");
     }
 
@@ -205,7 +208,7 @@ public class CommonSenseMedia extends SiteScraper {
         }
         // Scrape this book.
         getLogger().log(Level.INFO, "Scraping book: `" + bookId + "`.");
-        driver.navigate().to(DETAILS_URL + bookId);
+        driver.navigate().to("https://www.commonsensemedia.org/book-reviews/" + bookId);
         // Create the book record to be saved in the database.
         final Book book = new Book();
         book.id = bookId;
