@@ -4,10 +4,10 @@ import org.openqa.selenium.chrome.ChromeDriver;
 
 public class WebDriverFactory {
 
-    WebDriverFactory() {
+    public WebDriverFactory() {
     }
 
-    void enableChromeDriver(String driverPath) {
+    public void enableChromeDriver(String driverPath) {
         System.setProperty("webdriver.chrome.driver", driverPath);
     }
 
