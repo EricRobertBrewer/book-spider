@@ -253,7 +253,7 @@ public class BookCave extends SiteScraper {
         // Extract author.
         final WebElement authorDiv = detailsDiv.findElement(By.className("author"));
         final WebElement authorValueDiv = authorDiv.findElement(By.className("value"));
-        book.author = authorValueDiv.getText().trim();
+        book.authors = DriverUtils.getConcatenatedTexts(authorValueDiv, By.tagName("a"), "|");
         // Extract summary.
         final WebElement summaryDiv = detailsDiv.findElement(By.className("summary"));
         book.summary = summaryDiv.getText().trim();
@@ -274,19 +274,7 @@ public class BookCave extends SiteScraper {
                         getLogger().log(Level.WARNING, "Unable to parse pages in book details: `" + nameText + "`:`" + valueText + "`.", e);
                     }
                 } else if (nameText.startsWith("Genres")) {
-                    final StringBuilder genres = new StringBuilder();
-                    final List<WebElement> metaValueAs = metaValueDiv.findElements(By.tagName("a"));
-                    for (WebElement metaValueA : metaValueAs) {
-                        final String aText = metaValueA.getText().trim();
-                        if (aText.isEmpty()) {
-                            continue;
-                        }
-                        if (genres.length() > 0) {
-                            genres.append("|");
-                        }
-                        genres.append(aText.replaceAll(" / ", "/"));
-                    }
-                    book.genres = genres.toString();
+                    book.genres = DriverUtils.getConcatenatedTexts(metaValueDiv, By.tagName("a"), "|", text -> text.replaceAll(" / ", "/"));
                 } else {
                     getLogger().log(Level.WARNING, "Unknown meta data item `" + nameText + "`:`" + valueText + "`.");
                 }
@@ -308,6 +296,8 @@ public class BookCave extends SiteScraper {
                 book.appleBooksUrl = href;
             } else if ("Barnes & Noble".equalsIgnoreCase(text)) {
                 book.barnesAndNobleUrl = href;
+            } else if ("B&N Audiobook".equalsIgnoreCase(text)) {
+                book.barnesAndNobleAudiobookUrl = href;
             } else if ("B&N Print".equalsIgnoreCase(text)) {
                 book.barnesAndNoblePrintUrl = href;
             } else if ("Google Play".equalsIgnoreCase(text)) {
@@ -316,6 +306,9 @@ public class BookCave extends SiteScraper {
                 book.koboUrl = href;
             } else if ("Smashwords".equalsIgnoreCase(text)) {
                 book.smashwordsUrl = href;
+            } else //noinspection StatementWithEmptyBody
+                if ("No retailer links available".equalsIgnoreCase(text)) {
+                // Do nothing.
             } else {
                 getLogger().log(Level.WARNING, "Unknown purchase link found: `" + text + "`.");
             }
@@ -467,8 +460,20 @@ public class BookCave extends SiteScraper {
         FORMATTING_TAGS.add("i");
         FORMATTING_TAGS.add("strong");
         FORMATTING_TAGS.add("b");
+        FORMATTING_TAGS.add("u");
+        FORMATTING_TAGS.add("tt");
         FORMATTING_TAGS.add("strike");
         FORMATTING_TAGS.add("s");
+        FORMATTING_TAGS.add("big");
+        FORMATTING_TAGS.add("small");
+        FORMATTING_TAGS.add("mark");
+        FORMATTING_TAGS.add("del");
+        FORMATTING_TAGS.add("ins");
+        FORMATTING_TAGS.add("sub");
+        FORMATTING_TAGS.add("sup");
+        // For our purposes, `span`s should probably be ignored.
+        // Text in descriptions seems to only be contained in `p`s and `div`s.
+        FORMATTING_TAGS.add("span");
     }
 
     private static boolean areAllFormatting(List<WebElement> elements) {
@@ -484,22 +489,23 @@ public class BookCave extends SiteScraper {
     private static class Book {
         String id;
         String title;
-        String author;
+        String authors;
         String summary;
-        int pages = -1;
-        String genres;
+        String description = null;
         int communityRatingsCount;
         String communityAverageRating;
+        int pages = -1;
+        String genres;
         String amazonKindleUrl = null;
         String amazonPrintUrl = null;
         String audibleUrl = null;
         String appleBooksUrl = null;
         String barnesAndNobleUrl = null;
+        String barnesAndNobleAudiobookUrl = null;
         String barnesAndNoblePrintUrl = null;
         String googlePlayUrl = null;
         String koboUrl = null;
         String smashwordsUrl = null;
-        String description = null;
         long lastUpdated;
     }
 
@@ -537,31 +543,32 @@ public class BookCave extends SiteScraper {
         int insertBook(Book book) throws SQLException {
             ensureTableExists(TABLE_BOOKS);
             final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKS +
-                    "(id,title,author,summary,pages,genres,community_ratings_count,community_average_rating,amazon_kindle_url,amazon_print_url,audible_url,apple_books_url,barnes_and_noble_url,barnes_and_noble_print_url,google_play_url,kobo_url,smashwords_url,description,last_updated)\n" +
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+                    "(id,title,authors,summary,description,community_ratings_count,community_average_rating,pages,genres,amazon_kindle_url,amazon_print_url,audible_url,apple_books_url,barnes_and_noble_url,barnes_and_noble_audiobook_url,barnes_and_noble_print_url,google_play_url,kobo_url,smashwords_url,last_updated)\n" +
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
             insert.setString(1, book.id);
             insert.setString(2, book.title);
-            insert.setString(3, book.author);
+            insert.setString(3, book.authors);
             insert.setString(4, book.summary);
+            setStringOrNull(insert, 5, book.description);
+            insert.setInt(6, book.communityRatingsCount);
+            insert.setString(7, book.communityAverageRating);
             if (book.pages != -1) {
-                insert.setInt(5, book.pages);
+                insert.setInt(8, book.pages);
             } else {
-                insert.setNull(5, Types.INTEGER);
+                insert.setNull(8, Types.INTEGER);
             }
-            insert.setString(6, book.genres);
-            insert.setInt(7, book.communityRatingsCount);
-            insert.setString(8, book.communityAverageRating);
-            setStringOrNull(insert, 9, book.amazonKindleUrl);
-            setStringOrNull(insert, 10, book.amazonPrintUrl);
-            setStringOrNull(insert, 11, book.audibleUrl);
-            setStringOrNull(insert, 12, book.appleBooksUrl);
-            setStringOrNull(insert, 13, book.barnesAndNobleUrl);
-            setStringOrNull(insert, 14, book.barnesAndNoblePrintUrl);
-            setStringOrNull(insert, 15, book.googlePlayUrl);
-            setStringOrNull(insert, 16, book.koboUrl);
-            setStringOrNull(insert, 17, book.smashwordsUrl);
-            setStringOrNull(insert, 18, book.description);
-            insert.setLong(19, book.lastUpdated);
+            insert.setString(9, book.genres);
+            setStringOrNull(insert, 10, book.amazonKindleUrl);
+            setStringOrNull(insert, 11, book.amazonPrintUrl);
+            setStringOrNull(insert, 12, book.audibleUrl);
+            setStringOrNull(insert, 13, book.appleBooksUrl);
+            setStringOrNull(insert, 14, book.barnesAndNobleUrl);
+            setStringOrNull(insert, 15, book.barnesAndNobleAudiobookUrl);
+            setStringOrNull(insert, 16, book.barnesAndNoblePrintUrl);
+            setStringOrNull(insert, 17, book.googlePlayUrl);
+            setStringOrNull(insert, 18, book.koboUrl);
+            setStringOrNull(insert, 19, book.smashwordsUrl);
+            insert.setLong(20, book.lastUpdated);
             final int result = insert.executeUpdate();
             insert.close();
             return result;
@@ -601,22 +608,23 @@ public class BookCave extends SiteScraper {
                 statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (\n" +
                         " id TEXT PRIMARY KEY,\n" + // the-haunting-of-gillespie-house
                         " title TEXT NOT NULL,\n" + // The Haunting of Gillespie House
-                        " author TEXT NOT NULL,\n" + // Darcy Coates
+                        " authors TEXT NOT NULL,\n" + // Darcy Coates
                         " summary TEXT NOT NULL,\n" + // Elle is thrilled to spend a month minding the beautiful Gillespie property...
-                        " pages INTEGER DEFAULT NULL,\n" + // 200
-                        " genres TEXT DEFAULT NULL,\n" + // Fiction/Horror
+                        " description TEXT DEFAULT NULL,\n" + // Elle is thrilled to spend a month minding the beautiful Gillespie property...
                         " community_ratings_count INTEGER NOT NULL,\n" + // 1
                         " community_average_rating TEXT NOT NULL,\n" + // Moderate
+                        " pages INTEGER DEFAULT NULL,\n" + // 200
+                        " genres TEXT DEFAULT NULL,\n" + // Fiction/Horror
                         " amazon_kindle_url TEXT DEFAULT NULL,\n" + // https://...
                         " amazon_print_url TEXT DEFAULT NULL,\n" + // https://...
                         " audible_url TEXT DEFAULT NULL,\n" + // https://...
                         " apple_books_url TEXT DEFAULT NULL,\n" + // https://...
                         " barnes_and_noble_url TEXT DEFAULT NULL,\n" + // https://...
+                        " barnes_and_noble_audiobook_url TEXT DEFAULT NULL,\n" + // https://...
                         " barnes_and_noble_print_url TEXT DEFAULT NULL,\n" + // https://...
                         " google_play_url TEXT DEFAULT NULL,\n" + // https://...
                         " kobo_url TEXT DEFAULT NULL,\n" + // https://...
                         " smashwords_url TEXT DEFAULT NULL,\n" + // https://...
-                        " description TEXT DEFAULT NULL,\n" + // Elle is thrilled to spend a month minding the beautiful Gillespie property...
                         " last_updated INTEGER NOT NULL\n" + // System.currentTimeMillis() -> long
                         ");");
             } else if (TABLE_BOOK_RATINGS.equalsIgnoreCase(name)) {

@@ -360,21 +360,21 @@ public class CommonSenseMedia extends SiteScraper {
             if (detailsText.startsWith("Author:")) {
                 book.authors = detailsText.substring("Author:".length()).trim();
             } else if (detailsText.startsWith("Authors:")) {
-                book.authors = getConcatenatedAnchorTexts(detailsLi);
+                book.authors = DriverUtils.getConcatenatedTexts(detailsLi, By.tagName("a"), "|");
             } else if (detailsText.startsWith("Illustrator:")) {
                 book.illustrators = detailsText.substring("Illustrator:".length()).trim();
             } else if (detailsText.startsWith("Illustrators:")) {
-                book.illustrators = getConcatenatedAnchorTexts(detailsLi);
+                book.illustrators = DriverUtils.getConcatenatedTexts(detailsLi, By.tagName("a"), "|");
             } else if (detailsText.startsWith("Genre:")) {
                 book.genre = detailsText.substring("Genre:".length()).toLowerCase().trim();
             } else if (detailsText.startsWith("Topics:")) {
-                book.topics = getConcatenatedAnchorTexts(detailsLi);
+                book.topics = DriverUtils.getConcatenatedTexts(detailsLi, By.tagName("a"), "|");
             } else if (detailsText.startsWith("Book Type:") || detailsText.startsWith("Book type:")) {
                 book.type = detailsText.substring("Book Type:".length()).toLowerCase().trim();
             } else if (detailsText.startsWith("Publisher:")) {
                 book.publishers = detailsText.substring("Publisher:".length()).trim();
             } else if (detailsText.startsWith("Publishers:")) {
-                book.publishers = getConcatenatedAnchorTexts(detailsLi);
+                book.publishers = DriverUtils.getConcatenatedTexts(detailsLi, By.tagName("a"), "|");
             } else if (detailsText.startsWith("Publication Date:") || detailsText.startsWith("Publication date:")) {
                 final String publicationDateString = detailsText.substring("Publication Date:".length()).trim();
                 try {
@@ -413,19 +413,6 @@ public class CommonSenseMedia extends SiteScraper {
                 getLogger().log(Level.WARNING, "Unusual database response `" + categoryResult + "` when inserting book category `" + bookId + ":" + bookCategory.categoryId + "`.");
             }
         }
-    }
-
-    private static String getConcatenatedAnchorTexts(WebElement element) {
-        final List<WebElement> as = element.findElements(By.tagName("a"));
-        final StringBuilder s = new StringBuilder();
-        for (WebElement a : as) {
-            final String aText = a.getAttribute("textContent").trim();
-            if (s.length() > 0) {
-                s.append("|");
-            }
-            s.append(aText);
-        }
-        return s.toString();
     }
 
     private static class Book {
