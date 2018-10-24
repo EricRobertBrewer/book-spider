@@ -256,7 +256,7 @@ public class BookCave extends SiteScraper {
         book.authors = DriverUtils.getConcatenatedTexts(authorValueDiv, By.tagName("a"), "|");
         // Extract summary.
         final WebElement summaryDiv = detailsDiv.findElement(By.className("summary"));
-        book.summary = summaryDiv.getText().trim();
+        book.summary = getDescription(summaryDiv);
         // Extract pages and genres.
         final WebElement metadataDiv = detailsDiv.findElement(By.className("metadata"));
         final List<WebElement> metaDivs = metadataDiv.findElements(By.className("meta"));
