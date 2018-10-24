@@ -365,7 +365,7 @@ public class BookCave extends SiteScraper {
                 final WebElement barDiv = barContainerDiv.findElement(By.className("bar"));
                 barDiv.click();
                 try {
-                    Thread.sleep(250L);
+                    Thread.sleep(50L);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -391,6 +391,15 @@ public class BookCave extends SiteScraper {
                     }
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.SEVERE, "Unable to find tooltip element on the page after clicking rating box for book `" + bookId + "` and rating `" + rating.rating + "`.", e);
+                }
+                // Click outside of the tooltip to hide it.
+                // This allows any bars past the first to be clickable.
+                // See `https://mybookcave.com/mybookratings/rated-book/the-art-of-love/`.
+                titleH1.click();
+                try {
+                    Thread.sleep(50L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             } else {
                 getLogger().log(Level.WARNING, "Found a rating bar without a tool tip for book `" + bookId + "`.");
