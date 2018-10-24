@@ -471,6 +471,7 @@ public class BookCave extends SiteScraper {
         FORMATTING_TAGS.add("ins");
         FORMATTING_TAGS.add("sub");
         FORMATTING_TAGS.add("sup");
+        FORMATTING_TAGS.add("br");
         // For our purposes, `span`s should probably be ignored.
         // Text in descriptions seems to only be contained in `p`s and `div`s.
         FORMATTING_TAGS.add("span");
