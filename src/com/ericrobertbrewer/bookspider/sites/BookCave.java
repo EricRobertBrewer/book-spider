@@ -177,10 +177,10 @@ public class BookCave extends SiteScraper {
                 getLogger().log(Level.WARNING, "Could not find book details link on page " + page + ".", e);
             }
         }
-        // Quit when the "last page" link disappears.
+        // Quit when the "next page" link disappears.
         final WebElement paginationBlockDiv = contentMain.findElement(By.className("pagination-block"));
         try {
-            paginationBlockDiv.findElement(By.className("fa-angle-double-right"));
+            paginationBlockDiv.findElement(By.className("fa-angle-right"));
         } catch (NoSuchElementException e) {
             return true;
         }
