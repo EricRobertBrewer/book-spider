@@ -324,79 +324,84 @@ public class BookCave extends SiteScraper {
         } catch (NumberFormatException e) {
             getLogger().log(Level.WARNING, "Unable to parse book community ratings count text `" + communityRatingsIntegerText + "`.", e);
         }
-        // Extract the average community rating, community ratings, and rating levels.
-        final WebElement communityContainerDiv = communityRatingsDiv.findElement(By.className("community-container"));
-        // Extract the average community rating.
-        final WebElement communityAverageDiv = communityContainerDiv.findElement(By.className("community-average"));
-        final WebElement communityAverageImg = communityAverageDiv.findElement(By.tagName("img"));
-        book.communityAverageRating = communityAverageImg.getAttribute("alt").trim();
-        // Extract the community ratings and rating levels.
         final List<BookRating> ratings = new ArrayList<>();
         final List<BookRatingLevel> levels = new ArrayList<>();
-        final WebElement ratingsBarsDiv = communityContainerDiv.findElement(By.className("rating-bars"));
-        final List<WebElement> ratingBarDivs = ratingsBarsDiv.findElements(By.className("rating-bar"));
-        for (WebElement ratingBarDiv : ratingBarDivs) {
-            final BookRating rating = new BookRating();
-            rating.bookId = bookId;
-            // Extract rating.
-            final WebElement ratingNameSpan = ratingBarDiv.findElement(By.className("rating-name"));
-            rating.rating = ratingNameSpan.getText().trim();
-            // Extract count (the number of users who have given this book this rating).
-            final WebElement ratingCountSpan = ratingBarDiv.findElement(By.className("rating-count"));
-            final String countIntegerText = ratingCountSpan.getText().replaceAll("[()]", "").trim();
-            try {
-                rating.count = Integer.parseInt(countIntegerText);
-            } catch (NumberFormatException e) {
-                getLogger().log(Level.WARNING, "Unable to parse book rating count text `" + countIntegerText + "`.", e);
-            }
-            // Extract rating levels.
-            final String className = ratingBarDiv.getAttribute("class");
-            if (className.contains("has-tooltip")) {
-                // Click the bar to open the tooltip.
-                final WebElement barContainerDiv = ratingBarDiv.findElement(By.className("bar-container"));
-                final WebElement barDiv = barContainerDiv.findElement(By.className("bar"));
-                barDiv.click();
+        // Some books strangely don't have any rating. Therefore, they have no average rating.
+        // These books are probably not useful for our purposes.
+        // See `https://mybookcave.com/mybookratings/rated-book/demon-ember/`.
+        if (book.communityRatingsCount > 0) {
+            // Extract the average community rating, community ratings, and rating levels.
+            final WebElement communityContainerDiv = communityRatingsDiv.findElement(By.className("community-container"));
+            // Extract the average community rating.
+            final WebElement communityAverageDiv = communityContainerDiv.findElement(By.className("community-average"));
+            final WebElement communityAverageImg = communityAverageDiv.findElement(By.tagName("img"));
+            book.communityAverageRating = communityAverageImg.getAttribute("alt").trim();
+            // Extract the community ratings and rating levels.
+            final WebElement ratingsBarsDiv = communityContainerDiv.findElement(By.className("rating-bars"));
+            final List<WebElement> ratingBarDivs = ratingsBarsDiv.findElements(By.className("rating-bar"));
+            for (WebElement ratingBarDiv : ratingBarDivs) {
+                final BookRating rating = new BookRating();
+                rating.bookId = bookId;
+                // Extract rating.
+                final WebElement ratingNameSpan = ratingBarDiv.findElement(By.className("rating-name"));
+                rating.rating = ratingNameSpan.getText().trim();
+                // Extract count (the number of users who have given this book this rating).
+                final WebElement ratingCountSpan = ratingBarDiv.findElement(By.className("rating-count"));
+                final String countIntegerText = ratingCountSpan.getText().replaceAll("[()]", "").trim();
                 try {
-                    Thread.sleep(50L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    rating.count = Integer.parseInt(countIntegerText);
+                } catch (NumberFormatException e) {
+                    getLogger().log(Level.WARNING, "Unable to parse book rating count text `" + countIntegerText + "`.", e);
                 }
-                try {
-                    // The tooltip `div` element should become visible in the page (usually right at the bottom of the `body` element).
-                    final WebElement tooltipDiv = driver.findElement(By.className("tooltip"));
-                    final List<WebElement> columnDivs = tooltipDiv.findElements(By.className("column"));
-                    for (WebElement columnDiv : columnDivs) {
-                        final BookRatingLevel level = new BookRatingLevel();
-                        level.bookId = bookId;
-                        level.rating = rating.rating;
-                        final WebElement titleDiv = columnDiv.findElement(By.className("level-title"));
-                        final String titleText = titleDiv.getText();
-                        level.title = titleText.substring(titleText.indexOf(")") + 1).trim();
-                        final WebElement countSpan = columnDiv.findElement(By.className("level-count"));
-                        final String levelCountIntegerText = countSpan.getText().replaceAll("[()]", "").trim();
-                        try {
-                            level.count = Integer.parseInt(levelCountIntegerText);
-                        } catch (NumberFormatException e) {
-                            getLogger().log(Level.WARNING, "Unable to parse book rating level count text `" + levelCountIntegerText + "`.", e);
-                        }
-                        levels.add(level);
+                // Extract rating levels.
+                final String className = ratingBarDiv.getAttribute("class");
+                if (className.contains("has-tooltip")) {
+                    // Click the rating text to open the tooltip.
+                    // This is more reliable than clicking the bar, since the bar can be covered by the book cover image.
+                    // See `https://mybookcave.com/mybookratings/rated-book/chronicles-of-ara/`.
+                    ratingNameSpan.click();
+                    try {
+                        Thread.sleep(50L);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
                     }
-                } catch (NoSuchElementException e) {
-                    getLogger().log(Level.SEVERE, "Unable to find tooltip element on the page after clicking rating box for book `" + bookId + "` and rating `" + rating.rating + "`.", e);
+                    try {
+                        // The tooltip `div` element should become visible in the page (usually right at the bottom of the `body` element).
+                        final WebElement tooltipDiv = driver.findElement(By.className("tooltip"));
+                        final List<WebElement> columnDivs = tooltipDiv.findElements(By.className("column"));
+                        for (WebElement columnDiv : columnDivs) {
+                            final BookRatingLevel level = new BookRatingLevel();
+                            level.bookId = bookId;
+                            level.rating = rating.rating;
+                            final WebElement titleDiv = columnDiv.findElement(By.className("level-title"));
+                            final String titleText = titleDiv.getText();
+                            level.title = titleText.substring(titleText.indexOf(")") + 1).trim();
+                            final WebElement countSpan = columnDiv.findElement(By.className("level-count"));
+                            final String levelCountIntegerText = countSpan.getText().replaceAll("[()]", "").trim();
+                            try {
+                                level.count = Integer.parseInt(levelCountIntegerText);
+                            } catch (NumberFormatException e) {
+                                getLogger().log(Level.WARNING, "Unable to parse book rating level count text `" + levelCountIntegerText + "`.", e);
+                            }
+                            levels.add(level);
+                        }
+                    } catch (NoSuchElementException e) {
+                        getLogger().log(Level.SEVERE, "Unable to find tooltip element on the page after clicking rating box for book `" + bookId + "` and rating `" + rating.rating + "`.", e);
+                    }
+                    // Click outside of the tooltip to hide it.
+                    // This allows any bars past the first to be clickable.
+                    // See `https://mybookcave.com/mybookratings/rated-book/the-art-of-love/`.
+                    titleH1.click();
+                    try {
+                        Thread.sleep(50L);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                } else {
+                    getLogger().log(Level.WARNING, "Found a rating bar without a tool tip for book `" + bookId + "`.");
                 }
-                // Click outside of the tooltip to hide it.
-                // This allows any bars past the first to be clickable.
-                // See `https://mybookcave.com/mybookratings/rated-book/the-art-of-love/`.
-                titleH1.click();
-                try {
-                    Thread.sleep(50L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            } else {
-                getLogger().log(Level.WARNING, "Found a rating bar without a tool tip for book `" + bookId + "`.");
+                ratings.add(rating);
             }
-            ratings.add(rating);
         }
         // Extract the book description.
         final WebElement sidebarContainerDiv = siteInnerDiv.findElement(By.className("sidebar-container"));
@@ -406,7 +411,7 @@ public class BookCave extends SiteScraper {
         book.description = getDescription(descriptionDiv);
         // Set the time when this book was last updated.
         book.lastUpdated = System.currentTimeMillis();
-        // Add the book and the book categories to the database.
+        // Add the book, book ratings, and book rating levels to the database.
         final int bookResult = databaseHelper.insertBook(book);
         if (bookResult != 1) {
             getLogger().log(Level.WARNING, "Unusual database response `" + bookResult + "` when inserting book `" + bookId + "`.");
@@ -493,7 +498,7 @@ public class BookCave extends SiteScraper {
         String summary;
         String description = null;
         int communityRatingsCount;
-        String communityAverageRating;
+        String communityAverageRating = null;
         int pages = -1;
         String genres;
         String amazonKindleUrl = null;
@@ -551,7 +556,7 @@ public class BookCave extends SiteScraper {
             insert.setString(4, book.summary);
             setStringOrNull(insert, 5, book.description);
             insert.setInt(6, book.communityRatingsCount);
-            insert.setString(7, book.communityAverageRating);
+            setStringOrNull(insert, 7, book.communityAverageRating);
             setIntOrNull(insert, 8, book.pages, -1);
             insert.setString(9, book.genres);
             setStringOrNull(insert, 10, book.amazonKindleUrl);
@@ -608,7 +613,7 @@ public class BookCave extends SiteScraper {
                         " summary TEXT NOT NULL,\n" + // Elle is thrilled to spend a month minding the beautiful Gillespie property...
                         " description TEXT DEFAULT NULL,\n" + // Elle is thrilled to spend a month minding the beautiful Gillespie property...
                         " community_ratings_count INTEGER NOT NULL,\n" + // 1
-                        " community_average_rating TEXT NOT NULL,\n" + // Moderate
+                        " community_average_rating TEXT DEFAULT NULL,\n" + // Moderate
                         " pages INTEGER DEFAULT NULL,\n" + // 200
                         " genres TEXT DEFAULT NULL,\n" + // Fiction/Horror
                         " amazon_kindle_url TEXT DEFAULT NULL,\n" + // https://...
