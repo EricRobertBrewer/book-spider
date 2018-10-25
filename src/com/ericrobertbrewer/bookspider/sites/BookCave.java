@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Types;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
@@ -553,11 +552,7 @@ public class BookCave extends SiteScraper {
             setStringOrNull(insert, 5, book.description);
             insert.setInt(6, book.communityRatingsCount);
             insert.setString(7, book.communityAverageRating);
-            if (book.pages != -1) {
-                insert.setInt(8, book.pages);
-            } else {
-                insert.setNull(8, Types.INTEGER);
-            }
+            setIntOrNull(insert, 8, book.pages, -1);
             insert.setString(9, book.genres);
             setStringOrNull(insert, 10, book.amazonKindleUrl);
             setStringOrNull(insert, 11, book.amazonPrintUrl);

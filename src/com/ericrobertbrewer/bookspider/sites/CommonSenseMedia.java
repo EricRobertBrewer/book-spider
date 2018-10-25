@@ -14,7 +14,6 @@ import java.nio.file.Files;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Types;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -484,11 +483,7 @@ public class CommonSenseMedia extends SiteScraper {
             setStringOrNull(insert, 15, book.publishers);
             setStringOrNull(insert, 16, book.publicationDate);
             setStringOrNull(insert, 17, book.publishersRecommendedAges);
-            if (book.pages != -1) {
-                insert.setInt(18, book.pages);
-            } else {
-                insert.setNull(18, Types.INTEGER);
-            }
+            setIntOrNull(insert, 18, book.pages, -1);
             insert.setLong(19, book.lastUpdated);
             final int result = insert.executeUpdate();
             insert.close();
