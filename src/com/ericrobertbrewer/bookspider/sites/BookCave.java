@@ -12,6 +12,7 @@ import org.openqa.selenium.NoSuchElementException;
 import java.io.*;
 import java.nio.file.Files;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.*;
@@ -512,12 +513,18 @@ public class BookCave extends SiteScraper {
         String koboUrl = null;
         String smashwordsUrl = null;
         long lastUpdated;
+
+        private Book() {
+        }
     }
 
     private static class BookRating {
         String bookId;
         String rating;
         int count;
+
+        private BookRating() {
+        }
     }
 
     private static class BookRatingLevel {
@@ -525,6 +532,9 @@ public class BookCave extends SiteScraper {
         String rating;
         String title;
         int count;
+
+        private BookRatingLevel() {
+        }
     }
 
     private static class DatabaseHelper extends AbstractDatabaseHelper {
@@ -532,24 +542,32 @@ public class BookCave extends SiteScraper {
         private static final String TABLE_BOOK_RATINGS = "BookRatings";
         private static final String TABLE_BOOK_RATING_LEVELS = "BookRatingLevels";
 
-        DatabaseHelper(Logger logger) {
+        private DatabaseHelper(Logger logger) {
             super(logger);
         }
 
-        boolean shouldUpdateBook(String id) throws SQLException {
+        private boolean shouldUpdateBook(String id) throws SQLException {
             // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
             return !bookExists(id);
         }
 
-        boolean bookExists(String id) throws SQLException {
+        private boolean bookExists(String id) throws SQLException {
             return recordExists(TABLE_BOOKS, "id", id);
         }
 
-        int insertBook(Book book) throws SQLException {
+        private int insertBook(Book book) throws SQLException {
             ensureTableExists(TABLE_BOOKS);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKS +
-                    "(id,title,authors,summary,description,community_ratings_count,community_average_rating,pages,genres,amazon_kindle_url,amazon_print_url,audible_url,apple_books_url,barnes_and_noble_url,barnes_and_noble_audiobook_url,barnes_and_noble_print_url,google_play_url,kobo_url,smashwords_url,last_updated)\n" +
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+            final PreparedStatement insert = getConnection().prepareStatement(
+                    "INSERT INTO " + TABLE_BOOKS + "(" +
+                    "id,title,authors,summary,description," +
+                    "community_ratings_count,community_average_rating,pages,genres,amazon_kindle_url," +
+                    "amazon_print_url,audible_url,apple_books_url,barnes_and_noble_url,barnes_and_noble_audiobook_url," +
+                    "barnes_and_noble_print_url,google_play_url,kobo_url,smashwords_url,last_updated" +
+                    ")  VALUES(" +
+                    "?,?,?,?,?," +
+                    "?,?,?,?,?," +
+                    "?,?,?,?,?," +
+                    "?,?,?,?,?);");
             insert.setString(1, book.id);
             insert.setString(2, book.title);
             insert.setString(3, book.authors);
@@ -575,9 +593,10 @@ public class BookCave extends SiteScraper {
             return result;
         }
 
-        int insertBookRating(BookRating rating) throws SQLException {
+        private int insertBookRating(BookRating rating) throws SQLException {
             ensureTableExists(TABLE_BOOK_RATINGS);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_RATINGS +
+            final PreparedStatement insert = getConnection().prepareStatement(
+                    "INSERT INTO " + TABLE_BOOK_RATINGS +
                     "(book_id,rating,count)\n" +
                     " VALUES(?,?,?);");
             insert.setString(1, rating.bookId);
@@ -588,9 +607,10 @@ public class BookCave extends SiteScraper {
             return result;
         }
 
-        int insertBookRatingLevel(BookRatingLevel level) throws SQLException {
+        private int insertBookRatingLevel(BookRatingLevel level) throws SQLException {
             ensureTableExists(TABLE_BOOK_RATING_LEVELS);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_RATING_LEVELS +
+            final PreparedStatement insert = getConnection().prepareStatement(
+                    "INSERT INTO " + TABLE_BOOK_RATING_LEVELS +
                     "(book_id,rating,title,count)\n" +
                     " VALUES(?,?,?,?);");
             insert.setString(1, level.bookId);
@@ -602,11 +622,44 @@ public class BookCave extends SiteScraper {
             return result;
         }
 
+        private List<Book> getBooks() throws SQLException {
+            final List<Book> books = new ArrayList<>();
+            final Statement select = getConnection().createStatement();
+            final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_BOOKS + ";");
+            while (result.next()) {
+                final Book book = new Book();
+                book.id = result.getString("id");
+                book.title = result.getString("title");
+                book.authors = result.getString("authors");
+                book.summary = result.getString("summary");
+                book.description = result.getString("description");
+                book.communityRatingsCount = result.getInt("community_ratings_count");
+                book.communityAverageRating = result.getString("community_average_rating");
+                book.pages = getIntOrNull(result, "pages", -1);
+                book.genres = result.getString("genres");
+                book.amazonKindleUrl = result.getString("amazon_kindle_url");
+                book.amazonPrintUrl = result.getString("amazon_print_url");
+                book.audibleUrl = result.getString("audible_url");
+                book.appleBooksUrl = result.getString("apple_books_url");
+                book.barnesAndNobleUrl = result.getString("barnes_and_noble_url");
+                book.barnesAndNobleAudiobookUrl = result.getString("barnes_and_noble_audiobook_url");
+                book.barnesAndNoblePrintUrl = result.getString("barnes_and_noble_print_url");
+                book.googlePlayUrl = result.getString("google_play_url");
+                book.koboUrl = result.getString("kobo_url");
+                book.smashwordsUrl = result.getString("smashwords_url");
+                book.lastUpdated = result.getLong("last_updated");
+                books.add(book);
+            }
+            select.close();
+            return Collections.unmodifiableList(books);
+        }
+
         @Override
         public void ensureTableExists(String name) throws SQLException {
             if (TABLE_BOOKS.equalsIgnoreCase(name)) {
-                final Statement statement = getConnection().createStatement();
-                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (\n" +
+                final Statement create = getConnection().createStatement();
+                create.execute(
+                        "CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (\n" +
                         " id TEXT PRIMARY KEY,\n" + // the-haunting-of-gillespie-house
                         " title TEXT NOT NULL,\n" + // The Haunting of Gillespie House
                         " authors TEXT NOT NULL,\n" + // Darcy Coates
@@ -629,16 +682,18 @@ public class BookCave extends SiteScraper {
                         " last_updated INTEGER NOT NULL\n" + // System.currentTimeMillis() -> long
                         ");");
             } else if (TABLE_BOOK_RATINGS.equalsIgnoreCase(name)) {
-                final Statement statement = getConnection().createStatement();
-                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_RATINGS + " (\n" +
+                final Statement create = getConnection().createStatement();
+                create.execute(
+                        "CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_RATINGS + " (\n" +
                         " book_id TEXT NOT NULL,\n" +
                         " rating TEXT NOT NULL,\n" +
                         " count INTEGER NOT NULL,\n" +
                         " PRIMARY KEY (book_id, rating)\n" +
                         ");");
             } else if (TABLE_BOOK_RATING_LEVELS.equalsIgnoreCase(name)) {
-                final Statement statement = getConnection().createStatement();
-                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_RATING_LEVELS + " (\n" +
+                final Statement create = getConnection().createStatement();
+                create.execute(
+                        "CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_RATING_LEVELS + " (\n" +
                         " book_id TEXT NOT NULL,\n" +
                         " rating TEXT NOT NULL,\n" +
                         " title TEXT NOT NULL,\n" +
@@ -648,6 +703,155 @@ public class BookCave extends SiteScraper {
             } else {
                 throw new IllegalArgumentException("Unknown table name: `" + name + "`.");
             }
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class Amazon extends SiteScraper {
+
+        public static void main(String[] args) throws IOException {
+            Launcher.launch(args, new Provider() {
+                @Override
+                public Class<? extends SiteScraper> getScraperClass() {
+                    return Amazon.class;
+                }
+
+                @Override
+                public SiteScraper newInstance(Logger logger) {
+                    return new Amazon(logger);
+                }
+
+                @Override
+                public String getId() {
+                    return Folders.ID_BOOK_CAVE_AMAZON;
+                }
+            });
+        }
+
+        private Amazon(Logger logger) {
+            super(logger);
+        }
+
+        @Override
+        public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
+            final WebDriver driver = factory.newChromeDriver();
+            final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
+            databaseHelper.connect(contentFolder.getParent() + Folders.SLASH + Folders.ID_BOOK_CAVE + Folders.SLASH + "contents.db");
+            scrapeBookTexts(driver, contentFolder, databaseHelper, force);
+            databaseHelper.close();
+            driver.quit();
+            callback.onComplete();
+        }
+
+        private void scrapeBookTexts(WebDriver driver, File contentFolder, DatabaseHelper databaseHelper, boolean force) {
+            final List<Book> books;
+            try {
+                books = databaseHelper.getBooks();
+            } catch (SQLException e) {
+                getLogger().log(Level.SEVERE, "Unable to retrieve books.", e);
+                return;
+            }
+            for (Book book : books) {
+                // Skip unattainable books.
+                if (book.amazonKindleUrl == null && book.amazonPrintUrl == null) {
+                    continue;
+                }
+                int retries = 3;
+                while (retries > 0) {
+                    try {
+                        scrapeBookText(book, driver, contentFolder, force);
+                        break;
+                    } catch (IOException e) {
+                        getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + book.id + "`.", e);
+                    } catch (Throwable t) {
+                        getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + book.id + "`.", t);
+                    }
+                    retries--;
+                }
+            }
+        }
+
+        private void scrapeBookText(Book book, WebDriver driver, File contentFolder, boolean force) throws IOException {
+            // Check if this book text already exists.
+            final File file = new File(contentFolder, book.id + ".txt");
+            if (force) {
+                if (file.exists()) {
+                    if (!file.delete()) {
+                        getLogger().log(Level.WARNING, "Unable to delete file `" + file.getPath() + "`.");
+                    }
+                }
+            } else if (file.exists()) {
+                return;
+            }
+            // Create the new book file.
+            if (!file.createNewFile()) {
+                getLogger().log(Level.SEVERE, "Unable to create book file `" + file.getPath() + "`.");
+                return;
+            }
+            if (!file.canWrite() && !file.setWritable(true)) {
+                getLogger().log(Level.SEVERE, "Unable to write to book file `" + file.getPath() + "`.");
+                return;
+            }
+            final PrintStream out = new PrintStream(file);
+            final String url;
+            if (book.amazonKindleUrl == null) {
+                url = book.amazonPrintUrl;
+            } else {
+                url = book.amazonKindleUrl;
+            }
+            // Scrape the book contents.
+            getLogger().log(Level.INFO, "Scraping text for book `" + book.id + "`.");
+            driver.navigate().to(url);
+            final WebElement aPageDiv = driver.findElement(By.id("a-page"));
+            final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
+            final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
+            final WebElement leftColDiv = dpContainerDiv.findElement(By.id("leftCol"));
+            try {
+                final WebElement ebooksSitbLogoImg = leftColDiv.findElement(By.id("ebooksSitbLogoImg"));
+                ebooksSitbLogoImg.click();
+                try {
+                    Thread.sleep(1000L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                final WebElement sitbReaderPlaceholderDiv = aPageDiv.findElement(By.id("sitbReaderPlaceholder"));
+                final WebElement sitbLightboxDiv = sitbReaderPlaceholderDiv.findElement(By.id("sitbLightbox"));
+                final WebElement sitbLBHeaderDiv = sitbLightboxDiv.findElement(By.id("sitbLBHeader"));
+                final WebElement sitbReaderModeDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderMode"));
+                // Prefer the 'Kindle Book' view, but accept the 'Print Book' view.
+                try {
+                    final WebElement readerModeTabKindleDiv = sitbReaderModeDiv.findElement(By.id("readerModeTabKindle"));
+                    readerModeTabKindleDiv.click();
+                    try {
+                        Thread.sleep(500L);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                } catch (NoSuchElementException e) {
+                    getLogger().log(Level.INFO, "Page for book `" + book.id + "` does not contain 'Kindle Book' reader mode.");
+                }
+                // Zoom out. This may prevent having to scroll the page a lot further.
+                final WebElement sitbReaderZoomToolbarDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderZoomToolbar"));
+                final WebElement sitbReaderTitlebarZoomOutButton = sitbReaderZoomToolbarDiv.findElement(By.id("sitbReaderTitlebarZoomOut"));
+                sitbReaderTitlebarZoomOutButton.click();
+                try {
+                    Thread.sleep(500L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                final WebElement sitbReaderMiddleDiv = sitbLightboxDiv.findElement(By.id("sitbReaderMiddle"));
+                final WebElement sitbReaderPageareaDiv = sitbReaderMiddleDiv.findElement(By.id("sitbReader-pagearea"));
+                final WebElement sitbReaderPageContainerDiv = sitbReaderPageareaDiv.findElement(By.id("sitbReaderPageContainer"));
+                final WebElement sitbReaderPageScrollDiv = sitbReaderPageContainerDiv.findElement(By.id("sitbReaderPageScroll"));
+                final WebElement sitbReaderKindleSampleDiv = sitbReaderPageScrollDiv.findElement(By.id("sitbReaderKindleSample"));
+                final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
+                final WebElement frameBody = sitbReaderFrame.findElement(By.tagName("body"));
+                final String text = frameBody.getAttribute("textContent");
+                out.println(text);
+            } catch (NoSuchElementException e) {
+                getLogger().log(Level.WARNING, "Unable to find 'Look Inside' element for book `" + book.id + "`.");
+            }
+            out.close();
         }
     }
 }

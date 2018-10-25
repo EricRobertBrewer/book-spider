@@ -63,7 +63,8 @@ public abstract class AbstractDatabaseHelper {
 
     protected boolean recordExists(String table, String key, String value) throws SQLException {
         ensureTableExists(table);
-        final PreparedStatement select = getConnection().prepareStatement("SELECT " + key +
+        final PreparedStatement select = getConnection().prepareStatement(
+                "SELECT " + key +
                 " FROM " + table +
                 " WHERE " + key + "=?;");
         select.setString(1, value);
@@ -71,6 +72,14 @@ public abstract class AbstractDatabaseHelper {
         final boolean exists = result.next();
         select.close();  // Also closes `result`.
         return exists;
+    }
+
+    protected static int getIntOrNull(ResultSet result, String columnLabel, int nullValue) throws SQLException {
+        final int value = result.getInt(columnLabel);
+        if (result.wasNull()) {
+            return nullValue;
+        }
+        return value;
     }
 
     protected static void setIntOrNull(PreparedStatement s, int parameterIndex, int value, int nullValue) throws SQLException {
