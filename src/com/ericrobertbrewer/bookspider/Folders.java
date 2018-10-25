@@ -24,7 +24,7 @@ public class Folders {
     public static final String ID_COMMON_SENSE_MEDIA = "commonsensemedia";
     public static final String ID_NY_TIMES = "nytimes";
 
-    static File getContentFolder(String id) throws IOException {
+    public static File getContentFolder(String id) throws IOException {
         final File folder = new File(CONTENT_ROOT + id + SLASH);
         if (!folder.exists() && !folder.mkdirs()) {
             throw new IOException("Unable to create content folder: `" + folder.getPath() + "`.");

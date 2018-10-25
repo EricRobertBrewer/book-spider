@@ -734,9 +734,16 @@ public class BookCave extends SiteScraper {
 
         @Override
         public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
+            final String databaseFileName;
+            try {
+                databaseFileName = Folders.getContentFolder(Folders.ID_BOOK_CAVE) + Folders.SLASH + "contents.db";
+            } catch (IOException e) {
+                getLogger().log(Level.SEVERE, "Unable to get database folder name.", e);
+                return;
+            }
             final WebDriver driver = factory.newChromeDriver();
             final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
-            databaseHelper.connect(contentFolder.getParent() + Folders.SLASH + Folders.ID_BOOK_CAVE + Folders.SLASH + "contents.db");
+            databaseHelper.connect(databaseFileName);
             scrapeBookTexts(driver, contentFolder, databaseHelper, force);
             databaseHelper.close();
             driver.quit();
@@ -773,7 +780,7 @@ public class BookCave extends SiteScraper {
 
         private void scrapeBookText(Book book, WebDriver driver, File contentFolder, boolean force) throws IOException {
             // Check if this book text already exists.
-            final File file = new File(contentFolder, book.id + ".txt");
+            final File file = new File(contentFolder, book.id + ".html");
             if (force) {
                 if (file.exists()) {
                     if (!file.delete()) {
@@ -802,54 +809,62 @@ public class BookCave extends SiteScraper {
             // Scrape the book contents.
             getLogger().log(Level.INFO, "Scraping text for book `" + book.id + "`.");
             driver.navigate().to(url);
+            try {
+                Thread.sleep(1500L);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
             final WebElement aPageDiv = driver.findElement(By.id("a-page"));
             final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
             final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
             final WebElement leftColDiv = dpContainerDiv.findElement(By.id("leftCol"));
+            final WebElement ebooksSitbLogoImg = leftColDiv.findElement(By.id("ebooksSitbLogoImg"));
+            ebooksSitbLogoImg.click();
             try {
-                final WebElement ebooksSitbLogoImg = leftColDiv.findElement(By.id("ebooksSitbLogoImg"));
-                ebooksSitbLogoImg.click();
+                Thread.sleep(1000L);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            final WebElement sitbReaderPlaceholderDiv = aPageDiv.findElement(By.id("sitbReaderPlaceholder"));
+            final WebElement sitbLightboxDiv = sitbReaderPlaceholderDiv.findElement(By.id("sitbLightbox"));
+            final WebElement sitbLBHeaderDiv = sitbLightboxDiv.findElement(By.id("sitbLBHeader"));
+            final WebElement sitbReaderModeDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderMode"));
+            // Prefer the 'Kindle Book' view, but accept the 'Print Book' view.
+            try {
+                final WebElement readerModeTabKindleDiv = sitbReaderModeDiv.findElement(By.id("readerModeTabKindle"));
+                readerModeTabKindleDiv.click();
                 try {
                     Thread.sleep(1000L);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                final WebElement sitbReaderPlaceholderDiv = aPageDiv.findElement(By.id("sitbReaderPlaceholder"));
-                final WebElement sitbLightboxDiv = sitbReaderPlaceholderDiv.findElement(By.id("sitbLightbox"));
-                final WebElement sitbLBHeaderDiv = sitbLightboxDiv.findElement(By.id("sitbLBHeader"));
-                final WebElement sitbReaderModeDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderMode"));
-                // Prefer the 'Kindle Book' view, but accept the 'Print Book' view.
-                try {
-                    final WebElement readerModeTabKindleDiv = sitbReaderModeDiv.findElement(By.id("readerModeTabKindle"));
-                    readerModeTabKindleDiv.click();
-                    try {
-                        Thread.sleep(500L);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                } catch (NoSuchElementException e) {
-                    getLogger().log(Level.INFO, "Page for book `" + book.id + "` does not contain 'Kindle Book' reader mode.");
-                }
-                // Zoom out. This may prevent having to scroll the page a lot further.
-                final WebElement sitbReaderZoomToolbarDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderZoomToolbar"));
-                final WebElement sitbReaderTitlebarZoomOutButton = sitbReaderZoomToolbarDiv.findElement(By.id("sitbReaderTitlebarZoomOut"));
-                sitbReaderTitlebarZoomOutButton.click();
-                try {
-                    Thread.sleep(500L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                final WebElement sitbReaderMiddleDiv = sitbLightboxDiv.findElement(By.id("sitbReaderMiddle"));
-                final WebElement sitbReaderPageareaDiv = sitbReaderMiddleDiv.findElement(By.id("sitbReader-pagearea"));
-                final WebElement sitbReaderPageContainerDiv = sitbReaderPageareaDiv.findElement(By.id("sitbReaderPageContainer"));
-                final WebElement sitbReaderPageScrollDiv = sitbReaderPageContainerDiv.findElement(By.id("sitbReaderPageScroll"));
-                final WebElement sitbReaderKindleSampleDiv = sitbReaderPageScrollDiv.findElement(By.id("sitbReaderKindleSample"));
-                final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
-                final WebElement frameBody = sitbReaderFrame.findElement(By.tagName("body"));
-                final String text = frameBody.getAttribute("textContent");
-                out.println(text);
             } catch (NoSuchElementException e) {
-                getLogger().log(Level.WARNING, "Unable to find 'Look Inside' element for book `" + book.id + "`.");
+                getLogger().log(Level.INFO, "Page for book `" + book.id + "` does not contain 'Kindle Book' reader mode.");
+            }
+            // Zoom out. This may prevent having to scroll the page a lot further.
+            final WebElement sitbReaderZoomToolbarDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderZoomToolbar"));
+            final WebElement sitbReaderTitlebarZoomOutButton = sitbReaderZoomToolbarDiv.findElement(By.id("sitbReaderTitlebarZoomOut"));
+            sitbReaderTitlebarZoomOutButton.click();
+            try {
+                Thread.sleep(1500L);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            final WebElement sitbReaderMiddleDiv = sitbLightboxDiv.findElement(By.id("sitbReaderMiddle"));
+            final WebElement sitbReaderPageareaDiv = sitbReaderMiddleDiv.findElement(By.id("sitbReader-pagearea"));
+            final WebElement sitbReaderPageContainerDiv = sitbReaderPageareaDiv.findElement(By.id("sitbReaderPageContainer"));
+            final WebElement sitbReaderPageScrollDiv = sitbReaderPageContainerDiv.findElement(By.id("sitbReaderPageScroll"));
+            final WebElement sitbReaderKindleSampleDiv = sitbReaderPageScrollDiv.findElement(By.id("sitbReaderKindleSample"));
+            try {
+                final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
+                driver.switchTo().frame(sitbReaderFrame);
+                final WebElement frameBody = driver.findElement(By.tagName("body"));
+                final String html = frameBody.getAttribute("innerHTML");
+                out.println(html);
+            } catch (NoSuchElementException e) {
+                // This page does not have an `iframe` element.
+                final String html = sitbReaderKindleSampleDiv.getAttribute("innerHTML");
+                out.println(html);
             }
             out.close();
         }
