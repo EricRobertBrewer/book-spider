@@ -744,6 +744,7 @@ public class BookCave extends SiteScraper {
 
         @Override
         public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
+            // Get list of book names with IDs from database.
             final String databaseFileName;
             try {
                 databaseFileName = Folders.getContentFolder(Folders.ID_BOOK_CAVE) + Folders.SLASH + "contents.db";
@@ -751,16 +752,8 @@ public class BookCave extends SiteScraper {
                 getLogger().log(Level.SEVERE, "Unable to get database folder name.", e);
                 return;
             }
-            final WebDriver driver = factory.newChromeDriver();
             final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
             databaseHelper.connect(databaseFileName);
-            scrapeBookTexts(driver, contentFolder, databaseHelper, force);
-            databaseHelper.close();
-            driver.quit();
-            callback.onComplete();
-        }
-
-        private void scrapeBookTexts(WebDriver driver, File contentFolder, DatabaseHelper databaseHelper, boolean force) {
             final List<Book> books;
             try {
                 books = databaseHelper.getBooks();
@@ -768,6 +761,16 @@ public class BookCave extends SiteScraper {
                 getLogger().log(Level.SEVERE, "Unable to retrieve books.", e);
                 return;
             }
+            databaseHelper.close();
+            // Create driver.
+            final WebDriver driver = factory.newChromeDriver();
+            scrapeBookTexts(books, driver, contentFolder, force);
+            driver.quit();
+            // Close resources.
+            callback.onComplete();
+        }
+
+        private void scrapeBookTexts(List<Book> books, WebDriver driver, File contentFolder, boolean force) {
             for (Book book : books) {
                 // Skip unattainable books.
                 if (book.amazonKindleUrl == null && book.amazonPrintUrl == null) {
