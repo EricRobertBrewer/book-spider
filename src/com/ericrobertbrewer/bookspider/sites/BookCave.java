@@ -834,8 +834,7 @@ public class BookCave extends SiteScraper {
                 aPageDiv = driver.findElement(By.id("a-page"));
             } catch (NoSuchElementException e) {
                 // See `https://mybookcave.com/mybookratings/rated-book/forbidden-2/`.
-                getLogger().log(Level.WARNING, "The Amazon page for book `" + book.id + "` may no longer exist. Skipping.");
-                return;
+                throw new NoSuchElementException("The Amazon page for book `" + book.id + "` may no longer exist. Retrying.");
             }
             final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
             final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
@@ -846,9 +845,17 @@ public class BookCave extends SiteScraper {
                 getLogger().log(Level.INFO, "Unable to find 'Look Inside' element for book `" + book.id + "`. Skipping.");
                 return;
             }
-            lookInsideLogoImg.click();
             try {
-                Thread.sleep(500L);
+                lookInsideLogoImg.click();
+            } catch (WebDriverException ignored) {
+                // The 'Look Inside' (background) image is not clickable.
+                // Since it at least exists, try to click the cover image to open the preview window.
+                // See `https://www.amazon.com/dp/1523813342`.
+                final WebElement imgBlkFrontImg = dpContainerDiv.findElement(By.id("imgBlkFront"));
+                imgBlkFrontImg.click();
+            }
+            try {
+                Thread.sleep(1500L);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -860,19 +867,23 @@ public class BookCave extends SiteScraper {
                 // "Feature Unavailable"
                 // "We're sorry, but this feature is currently unavailable. Please try again later."
                 // See `https://www.amazon.com/dp/B01MYH403A`.
-                getLogger().log(Level.WARNING, "Kindle sample feature may be unavailable for book `" + book.id + "`.");
-                return;
+                throw new NoSuchElementException("Kindle sample feature may be unavailable for book `" + book.id + "`. Retrying.");
             }
             final WebElement sitbLBHeaderDiv = sitbLightboxDiv.findElement(By.id("sitbLBHeader"));
             final WebElement sitbReaderModeDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderMode"));
             // Prefer the 'Kindle Book' view, but accept the 'Print Book' view.
             try {
                 final WebElement readerModeTabKindleDiv = sitbReaderModeDiv.findElement(By.id("readerModeTabKindle"));
-                readerModeTabKindleDiv.click();
                 try {
-                    Thread.sleep(500L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    readerModeTabKindleDiv.click();
+                    try {
+                        Thread.sleep(500L);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                } catch (ElementNotVisibleException e) {
+                    // The 'Kindle Book' `div` may not be clickable.
+                    getLogger().log(Level.INFO, "Unable to click 'Kindle Book' tab element. Continuing.");
                 }
             } catch (NoSuchElementException e) {
                 getLogger().log(Level.INFO, "Page for book `" + book.id + "` does not contain 'Kindle Book' reader mode.");
