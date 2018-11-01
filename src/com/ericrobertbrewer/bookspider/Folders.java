@@ -20,7 +20,7 @@ public class Folders {
     private static final String LOGS_ROOT = "logs" + SLASH;
 
     public static final String ID_BOOK_CAVE = "bookcave";
-    public static final String ID_BOOK_CAVE_AMAZON = ID_BOOK_CAVE + SLASH + "amazon";
+    public static final String ID_BOOK_CAVE_AMAZON = "bookcave_amazon";
     public static final String ID_COMMON_SENSE_MEDIA = "commonsensemedia";
     public static final String ID_NY_TIMES = "nytimes";
 

@@ -717,302 +717,55 @@ public class BookCave extends SiteScraper {
     }
 
     @SuppressWarnings("unused")
-    private static class Amazon extends SiteScraper {
+    private static class AmazonProvider implements Provider {
 
         public static void main(String[] args) throws IOException {
-            Launcher.launch(args, new Provider() {
-                @Override
-                public Class<? extends SiteScraper> getScraperClass() {
-                    return Amazon.class;
-                }
-
-                @Override
-                public SiteScraper newInstance(Logger logger) {
-                    return new Amazon(logger);
-                }
-
-                @Override
-                public String getId() {
-                    return Folders.ID_BOOK_CAVE_AMAZON;
-                }
-            });
-        }
-
-        private Amazon(Logger logger) {
-            super(logger);
+            Launcher.launch(args, new AmazonProvider());
         }
 
         @Override
-        public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
+        public Class<? extends SiteScraper> getScraperClass() {
+            return Amazon.class;
+        }
+
+        @Override
+        public SiteScraper newInstance(final Logger logger) {
             // Get list of book names with IDs from database.
             final String databaseFileName;
             try {
                 databaseFileName = Folders.getContentFolder(Folders.ID_BOOK_CAVE) + Folders.SLASH + "contents.db";
             } catch (IOException e) {
-                getLogger().log(Level.SEVERE, "Unable to get database folder name.", e);
-                return;
+                throw new RuntimeException("Unable to get database folder name.", e);
             }
-            final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
+            final DatabaseHelper databaseHelper = new DatabaseHelper(logger);
             databaseHelper.connect(databaseFileName);
-            final List<Book> books;
+            final List<Book> allBooks;
             try {
-                books = databaseHelper.getBooks();
+                allBooks = databaseHelper.getBooks();
             } catch (SQLException e) {
-                getLogger().log(Level.SEVERE, "Unable to retrieve books.", e);
-                return;
+                throw new RuntimeException("Unable to retrieve books.", e);
             }
             databaseHelper.close();
-            // Create driver.
-            final WebDriver driver = factory.newChromeDriver();
-            scrapeBookTexts(books, driver, contentFolder, force);
-            driver.quit();
-            // Close resources.
-            callback.onComplete();
-        }
-
-        private void scrapeBookTexts(List<Book> books, WebDriver driver, File contentFolder, boolean force) {
-            for (Book book : books) {
+            final List<String> bookIds = new ArrayList<>();
+            final List<String> urls = new ArrayList<>();
+            for (Book book : allBooks) {
                 // Skip unattainable books.
                 if (book.amazonKindleUrl == null && book.amazonPrintUrl == null) {
                     continue;
                 }
-                int retries = 3;
-                while (retries > 0) {
-                    try {
-                        scrapeBookText(book, driver, contentFolder, force);
-                        break;
-                    } catch (IOException e) {
-                        getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + book.id + "`.", e);
-                    } catch (NoSuchElementException e) {
-                        getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + book.id + "`.", e);
-                    } catch (Throwable t) {
-                        getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + book.id + "`.", t);
-                    }
-                    retries--;
+                bookIds.add(book.id);
+                if (book.amazonKindleUrl == null) {
+                    urls.add(book.amazonPrintUrl);
+                } else {
+                    urls.add(book.amazonKindleUrl);
                 }
             }
+            return new Amazon(logger, bookIds, urls);
         }
 
-        private void scrapeBookText(Book book, WebDriver driver, File contentFolder, boolean force) throws IOException, NoSuchElementException {
-            // Check if this book text already exists.
-            final File file = new File(contentFolder, book.id + ".txt");
-            if (force) {
-                if (file.exists()) {
-                    if (!file.delete()) {
-                        getLogger().log(Level.SEVERE, "Unable to delete file `" + file.getPath() + "`.");
-                        return;
-                    }
-                }
-            } else if (file.exists()) {
-                return;
-            }
-            // Scrape the book contents.
-            getLogger().log(Level.INFO, "Scraping text for book `" + book.id + "`.");
-            final String url;
-            if (book.amazonKindleUrl == null) {
-                url = book.amazonPrintUrl;
-            } else {
-                url = book.amazonKindleUrl;
-            }
-            driver.navigate().to(url);
-            try {
-                Thread.sleep(1000L);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            // Close the "Read this book for free with Kindle Unlimited" popover, if it appears.
-            // See `https://www.amazon.com/dp/1980537615`.
-            try {
-                final WebElement aModalScrollerDiv = driver.findElement(By.className("a-modal-scroller"));
-                final WebElement noButton = aModalScrollerDiv.findElement(By.id("p2dPopoverID-no-button"));
-                noButton.click();
-            } catch (NoSuchElementException ignored) {
-                // It usually doesn't appear.
-            }
-            final WebElement aPageDiv;
-            try {
-                aPageDiv = driver.findElement(By.id("a-page"));
-            } catch (NoSuchElementException e) {
-                // See `https://mybookcave.com/mybookratings/rated-book/forbidden-2/`.
-                throw new NoSuchElementException("The Amazon page for book `" + book.id + "` may no longer exist. Retrying.");
-            }
-            final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
-            final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
-            final WebElement lookInsideLogoImg = findLookInsideLogoImg(dpContainerDiv);
-            if (lookInsideLogoImg == null) {
-                // This book does not have a 'Look Inside' element.
-                // Therefore, there is no preview for this book.
-                getLogger().log(Level.INFO, "Unable to find 'Look Inside' element for book `" + book.id + "`. Skipping.");
-                return;
-            }
-            try {
-                lookInsideLogoImg.click();
-            } catch (WebDriverException ignored) {
-                // The 'Look Inside' (background) image is not clickable.
-                // Since it at least exists, try to click the cover image to open the preview window.
-                // See `https://www.amazon.com/dp/1523813342`.
-                final WebElement imgBlkFrontImg = dpContainerDiv.findElement(By.id("imgBlkFront"));
-                imgBlkFrontImg.click();
-            }
-            try {
-                Thread.sleep(1500L);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            final WebElement sitbReaderPlaceholderDiv = aPageDiv.findElement(By.id("sitbReaderPlaceholder"));
-            final WebElement sitbLightboxDiv;
-            try {
-                sitbLightboxDiv = sitbReaderPlaceholderDiv.findElement(By.id("sitbLightbox"));
-            } catch (NoSuchElementException e) {
-                // "Feature Unavailable"
-                // "We're sorry, but this feature is currently unavailable. Please try again later."
-                // See `https://www.amazon.com/dp/B01MYH403A`.
-                throw new NoSuchElementException("Kindle sample feature may be unavailable for book `" + book.id + "`. Retrying.");
-            }
-            final WebElement sitbLBHeaderDiv = sitbLightboxDiv.findElement(By.id("sitbLBHeader"));
-            final WebElement sitbReaderModeDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderMode"));
-            // Prefer the 'Kindle Book' view, but accept the 'Print Book' view.
-            try {
-                final WebElement readerModeTabKindleDiv = sitbReaderModeDiv.findElement(By.id("readerModeTabKindle"));
-                try {
-                    readerModeTabKindleDiv.click();
-                    try {
-                        Thread.sleep(500L);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                } catch (ElementNotVisibleException e) {
-                    // The 'Kindle Book' `div` may not be clickable.
-                    getLogger().log(Level.INFO, "Unable to click 'Kindle Book' tab element. Continuing.");
-                }
-            } catch (NoSuchElementException e) {
-                getLogger().log(Level.INFO, "Page for book `" + book.id + "` does not contain 'Kindle Book' reader mode.");
-            }
-            // Zoom out. This may prevent having to scroll the page a lot further.
-            final WebElement sitbReaderZoomToolbarDiv = sitbLBHeaderDiv.findElement(By.id("sitbReaderZoomToolbar"));
-            final WebElement sitbReaderTitlebarZoomOutButton = sitbReaderZoomToolbarDiv.findElement(By.id("sitbReaderTitlebarZoomOut"));
-            sitbReaderTitlebarZoomOutButton.click();
-            try {
-                Thread.sleep(1500L);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            final WebElement sitbReaderMiddleDiv = sitbLightboxDiv.findElement(By.id("sitbReaderMiddle"));
-            final WebElement sitbReaderPageareaDiv = sitbReaderMiddleDiv.findElement(By.id("sitbReader-pagearea"));
-            final WebElement sitbReaderPageContainerDiv = sitbReaderPageareaDiv.findElement(By.id("sitbReaderPageContainer"));
-            final WebElement sitbReaderPageScrollDiv = sitbReaderPageContainerDiv.findElement(By.id("sitbReaderPageScroll"));
-            final WebElement sitbReaderKindleSampleDiv;
-            try {
-                sitbReaderKindleSampleDiv = sitbReaderPageScrollDiv.findElement(By.id("sitbReaderKindleSample"));
-            } catch (NoSuchElementException e) {
-                // This book does not have a Kindle sample.
-                // Though it has a print sample, it is an `img` which loads lazily, which would require both
-                // scrolling the page while waiting for loads and an image-to-text engine.
-                // Skip it for now.
-                getLogger().log(Level.INFO, "Book `" + book.id + "` does not have a Kindle sample. Skipping.");
-                return;
-            }
-            try {
-                final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
-                driver.switchTo().frame(sitbReaderFrame);
-                final WebElement frameBody = driver.findElement(By.tagName("body"));
-                writeBookText(frameBody, file);
-            } catch (NoSuchElementException e) {
-                // This page does not have an `iframe` element.
-                // That is OK. The book contents are simply embedded in the same page.
-                writeBookText(sitbReaderKindleSampleDiv, file);
-            }
-        }
-
-        private WebElement findLookInsideLogoImg(WebElement dpContainerDiv) {
-            try {
-                return dpContainerDiv.findElement(By.id("ebooksSitbLogoImg"));
-            } catch (NoSuchElementException e) {
-                // This page may be a slightly different format than most.
-                // See `https://www.amazon.com/dp/B01I39Y1UY`.
-                try {
-                    return dpContainerDiv.findElement(By.id("sitbLogoImg"));
-                } catch (NoSuchElementException ignored) {
-                }
-            }
-            return null;
-        }
-
-        private void writeBookText(WebElement textRoot, File file) throws IOException {
-            // Create the new book file.
-            if (!file.createNewFile()) {
-                getLogger().log(Level.SEVERE, "Unable to create book file `" + file.getPath() + "`.");
-                return;
-            }
-            if (!file.canWrite() && !file.setWritable(true)) {
-                getLogger().log(Level.SEVERE, "Unable to write to book file `" + file.getPath() + "`.");
-                return;
-            }
-            final PrintStream out = new PrintStream(file);
-            writeElementText(textRoot, out);
-            out.close();
-        }
-
-        private void writeElementText(WebElement element, PrintStream out) {
-            // Search recursively for matching children.
-            final List<WebElement> children = element.findElements(By.xpath("./*"));
-            if (children.size() == 0 || areAllFormatting(children)) {
-                final String tag = element.getTagName();
-                // Blacklist certain tags.
-                if ("style".equals(tag)) {
-                    return;
-                }
-                final String text = element.getAttribute("innerHTML")
-                        // Extract `img` `alt` text.
-                        // An image is used frequently as a "drop cap" (https://graphicdesign.stackexchange.com/questions/85715/first-letter-of-a-book-or-chapter).
-                        // See `https://www.amazon.com/dp/B078WY9W7K`.
-                        .replaceAll("<img[^>]*? alt=\"([^\"]+)\"[^>]*?>", "$1")
-                        // Break lines.
-                        // Though the `br` tag is considered a "formatting" tag, this can prevent unwanted
-                        // concatenation of texts that are really on separate lines.
-                        .replaceAll("<br.*?>", "\n")
-                        // Ignore other HTML formatting tags, e.g. links, italics.
-                        .replaceAll("<([-a-zA-Z0-9]+).*?>(.*?)</\\1>", "$2")
-                        // Ignore self-closing tags.
-                        .replaceAll("<[^>]+?/?>", "")
-                        // Decode the most common HTML character entity references.
-                        .replaceAll("&nbsp;", " ")
-                        .replaceAll("&amp;", "&")
-                        .replaceAll("&quot;", "\"")
-                        .replaceAll("&lt;", "<")
-                        .replaceAll("&gt;", ">")
-                        .trim();
-                if (text.isEmpty()) {
-                    return;
-                }
-                out.println(text);
-            } else {
-                for (WebElement child : children) {
-                    writeElementText(child, out);
-                }
-            }
-        }
-
-        private static final Set<String> CONTAINING_TAGS = new HashSet<>();
-        static {
-            CONTAINING_TAGS.add("div");
-            CONTAINING_TAGS.add("p");
-            CONTAINING_TAGS.add("h1");
-            CONTAINING_TAGS.add("h2");
-            CONTAINING_TAGS.add("h3");
-            CONTAINING_TAGS.add("h4");
-            CONTAINING_TAGS.add("h5");
-            CONTAINING_TAGS.add("h6");
-        }
-
-        private static boolean containsContainingTag(List<WebElement> elements) {
-            for (WebElement element : elements) {
-                final String tag = element.getTagName();
-                if (CONTAINING_TAGS.contains(tag)) {
-                    return true;
-                }
-            }
-            return false;
+        @Override
+        public String getId() {
+            return Folders.ID_BOOK_CAVE_AMAZON;
         }
     }
 }
