@@ -4,21 +4,31 @@ package com.ericrobertbrewer.bookspider.sites;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.SiteScraper;
 import com.ericrobertbrewer.web.WebDriverFactory;
+import okhttp3.Call;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.openqa.selenium.*;
+import org.openqa.selenium.NoSuchElementException;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.nio.file.Files;
+import java.util.*;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 public class Amazon extends SiteScraper {
 
     private final List<String> bookIds;
     private final List<String> urls;
+
+    private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
+    private final AtomicBoolean isDownloadingImages = new AtomicBoolean(false);
 
     Amazon(Logger logger, List<String> bookIds, List<String> urls) {
         super(logger);
@@ -28,22 +38,44 @@ public class Amazon extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
-        // Create driver.
-        final WebDriver driver = factory.newChromeDriver();
-        scrapeBookTexts(driver, contentFolder, force);
-        driver.quit();
-        // Close resources.
-        callback.onComplete();
+        final Queue<ImageInfo> imagesQueue = new LinkedList<>();
+        // Create scraping thread.
+        final Thread scrapeThread = new Thread(() -> {
+            isScrapingBooks.set(true);
+            final WebDriver driver = factory.newChromeDriver();
+            scrapeBookTexts(driver, contentFolder, imagesQueue, force);
+            driver.quit();
+            isScrapingBooks.set(false);
+            if (!isDownloadingImages.get()) {
+                callback.onComplete();
+            }
+        });
+        scrapeThread.start();
+        // Create scraping thread.
+        final Thread imagesThread = new Thread(() -> {
+            isDownloadingImages.set(true);
+            final OkHttpClient client = new OkHttpClient.Builder()
+                    .connectTimeout(10, TimeUnit.SECONDS)
+                    .writeTimeout(10, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .build();
+            downloadImages(client, imagesQueue, force);
+            isDownloadingImages.set(false);
+            if (!isScrapingBooks.get()) {
+                callback.onComplete();
+            }
+        });
+        imagesThread.start();
     }
 
-    private void scrapeBookTexts(WebDriver driver, File contentFolder, boolean force) {
+    private void scrapeBookTexts(WebDriver driver, File contentFolder, Queue<ImageInfo> imagesQueue, boolean force) {
         for (int i = 0; i < bookIds.size(); i++) {
             final String bookId = bookIds.get(i);
             final String url = urls.get(i);
             int retries = 3;
             while (retries > 0) {
                 try {
-                    scrapeBookText(bookId, url, driver, contentFolder, force);
+                    scrapeBookText(bookId, url, driver, contentFolder, imagesQueue, force);
                     break;
                 } catch (IOException e) {
                     getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookId + "`.", e);
@@ -57,7 +89,7 @@ public class Amazon extends SiteScraper {
         }
     }
 
-    private void scrapeBookText(String bookId, String url, WebDriver driver, File contentFolder, boolean force) throws IOException, NoSuchElementException {
+    private void scrapeBookText(String bookId, String url, WebDriver driver, File contentFolder, Queue<ImageInfo> imagesQueue, boolean force) throws IOException, NoSuchElementException {
         // Check if contents for this book already exist.
         final File bookFolder = new File(contentFolder, bookId);
         if (bookFolder.exists()) {
@@ -186,11 +218,11 @@ public class Amazon extends SiteScraper {
         }
         try {
             final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
-            writeBookContents(driver, sitbReaderFrame, bookFolder);
+            writeBookContents(driver, sitbReaderFrame, bookFolder, imagesQueue);
         } catch (NoSuchElementException e) {
             // This page does not have an `iframe` element.
             // That is OK. The book contents are simply embedded in the same page.
-            writeBookContents(driver, sitbReaderKindleSampleDiv, bookFolder);
+            writeBookContents(driver, sitbReaderKindleSampleDiv, bookFolder, imagesQueue);
         }
     }
 
@@ -208,7 +240,7 @@ public class Amazon extends SiteScraper {
         return null;
     }
 
-    private void writeBookContents(WebDriver driver, WebElement rootElement, File bookFolder) throws IOException {
+    private void writeBookContents(WebDriver driver, WebElement rootElement, File bookFolder, Queue<ImageInfo> imagesQueue) throws IOException {
         // Create the book text file.
         final File textFile = new File(bookFolder, "text.txt");
         if (!textFile.createNewFile()) {
@@ -220,14 +252,15 @@ public class Amazon extends SiteScraper {
             return;
         }
         final PrintStream out = new PrintStream(textFile);
-        writeElementContents(driver, rootElement, bookFolder, out);
+        writeElementContents(driver, rootElement, bookFolder, out, imagesQueue);
         out.close();
     }
 
-    private void writeElementContents(WebDriver driver, WebElement element, File bookFolder, PrintStream out) {
+    private void writeElementContents(WebDriver driver, WebElement element, File bookFolder, PrintStream out, Queue<ImageInfo> imagesQueue) {
         // Search recursively for matching children.
         final List<WebElement> children = element.findElements(By.xpath("./*"));
         if (children.size() == 0 || areAllFormatting(children)) {
+            // This element is considered relevant. Write its contents.
             final String tag = element.getTagName();
             // Handle certain tags specially.
             if ("style".equals(tag)) {
@@ -236,10 +269,25 @@ public class Amazon extends SiteScraper {
             } else if ("iframe".equals(tag)) {
                 driver.switchTo().frame(element);  // Does this need to be undone?
                 final WebElement frameBody = driver.findElement(By.tagName("body"));
-                writeElementContents(driver, frameBody, bookFolder, out);
+                writeElementContents(driver, frameBody, bookFolder, out, imagesQueue);
                 return;
             }
-            final String text = element.getAttribute("innerHTML")
+            // Extract the raw inner HTML.
+            final String html = element.getAttribute("innerHTML");
+            // Check for and download any images within image (`img`) tags.
+            // See `https://stackoverflow.com/questions/6020384/create-array-of-regex-matches`.
+            Pattern.compile("<img[^>]*? src=\"([^\"]+)\"[^>]*?>")
+                    .matcher(html)
+                    .results()
+                    .map(matchResult -> matchResult.group(1))
+                    .forEach(url -> imagesQueue.offer(new ImageInfo(url, bookFolder)));
+            // On every relevant LEAF-ELEMENT, check for a `background-image` CSS attribute.
+            final String backgroundImageValue = element.getCssValue("background-image");
+            if (backgroundImageValue != null && !backgroundImageValue.isEmpty() && !"none".equals(backgroundImageValue)) {
+                imagesQueue.offer(new ImageInfo(backgroundImageValue.trim(), bookFolder));
+            }
+            // Convert HTML to human-readable text.
+            final String text = html
                     // Extract `img` `alt` text.
                     // An image is used frequently as a "drop cap" (https://graphicdesign.stackexchange.com/questions/85715/first-letter-of-a-book-or-chapter).
                     // See `https://www.amazon.com/dp/B078WY9W7K`.
@@ -265,7 +313,7 @@ public class Amazon extends SiteScraper {
             out.println(text);
         } else {
             for (WebElement child : children) {
-                writeElementContents(driver, child, bookFolder, out);
+                writeElementContents(driver, child, bookFolder, out, imagesQueue);
             }
         }
     }
@@ -311,5 +359,146 @@ public class Amazon extends SiteScraper {
             }
         }
         return true;
+    }
+
+    private static class ImageInfo {
+        final String url;
+        final File bookFolder;
+
+        ImageInfo(String url, File bookFolder) {
+            this.url = url;
+            this.bookFolder = bookFolder;
+        }
+    }
+
+    private void downloadImages(OkHttpClient client, Queue<ImageInfo> imagesQueue, boolean force) {
+        getLogger().log(Level.INFO, "Downloading images...");
+        while (isScrapingBooks.get() || !imagesQueue.isEmpty()) {
+            //
+            if (imagesQueue.isEmpty()) {
+                try {
+                    Thread.sleep(10000L);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                continue;
+            }
+            final ImageInfo imageInfo = imagesQueue.poll();
+            getLogger().log(Level.INFO, "Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.");
+            final String imageFileNameCandidate = getImageFileName(imageInfo.url);
+            final File imageFile;
+            final File similarImageFile = findSimilarFile(imageInfo.bookFolder, imageFileNameCandidate);
+            if (similarImageFile != null) {
+                imageFile = similarImageFile;
+            } else {
+                imageFile = new File(imageInfo.bookFolder, imageFileNameCandidate);
+            }
+            if (imageFile.exists()) {
+                if (force) {
+                    if (!imageFile.delete()) {
+                        getLogger().log(Level.SEVERE, "Unable to delete image file `" + imageFile.getPath() + "`.");
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
+            }
+            int retries = 3;
+            while (retries > 0) {
+                try {
+                    final Request request = new Request.Builder()
+                            .url(imageInfo.url)
+                            .build();
+                    final Call call = client.newCall(request);
+                    final Response response = call.execute();
+                    if (response.body() != null) {
+                        if (imageFile.getName().contains(".")) {
+                            Files.copy(response.body().byteStream(), imageFile.toPath());
+                        } else {
+                            // Look for a `Content-Type`.
+                            final String contentType = response.header("Content-Type");
+                            final File newImageFile;
+                            if ("image/jpeg".equalsIgnoreCase(contentType)) {
+                                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpeg");
+                            } else if ("image/jpg".equalsIgnoreCase(contentType)) {
+                                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpg");
+                            } else if ("image/png".equalsIgnoreCase(contentType)) {
+                                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".png");
+                            } else if ("image/gif".equalsIgnoreCase(contentType)) {
+                                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".gif");
+                            } else {
+                                // No luck.
+                                newImageFile = imageFile;
+                            }
+                            Files.copy(response.body().byteStream(), newImageFile.toPath());
+                        }
+                    }
+                    break;
+                } catch (IOException e) {
+                    getLogger().log(Level.WARNING, "Encountered IOException while downloading image `" + imageInfo.url + "`.", e);
+                } catch (Throwable t) {
+                    getLogger().log(Level.WARNING, "Encountered unknown error while downloading image `" + imageInfo.url + "`.", t);
+                }
+                retries--;
+            }
+        }
+        getLogger().log(Level.INFO, "Finished downloading images.");
+    }
+
+    private String getImageFileName(String url) {
+        // Chop off parameters, if they exist.
+        final int parametersIndex = url.lastIndexOf("?");
+        final String parameters;
+        if (parametersIndex != -1) {
+            parameters = url.substring(parametersIndex + 1);
+            url = url.substring(0, parametersIndex);
+        } else {
+            parameters = null;
+        }
+        // Check for a file extension.
+        String extension = null;
+        if (url.endsWith(".jpg")) {
+            extension = ".jpg";
+        } else if (url.endsWith(".jpeg")) {
+            extension = ".jpeg";
+        } else if (url.endsWith(".png")) {
+            extension = ".png";
+        } else if (url.endsWith(".gif")) {
+            extension = ".gif";
+        }
+        if (extension != null) {
+            // Chop off the extension. It will be added later.
+            url = url.substring(0, url.length() - extension.length());
+        } else if (parameters != null) {
+            // When no extension exists, check the parameters for a MIME type.
+            if (parameters.contains("mime=image/jpeg")) {
+                extension = ".jpeg";
+            } else if (parameters.contains("mime=image/jpg")) {
+                extension = ".jpg";
+            } else if (parameters.contains("mime=image/png")) {
+                extension = ".png";
+            } else if (parameters.contains("mime=image/gif")) {
+                extension = ".gif";
+            }
+        }
+        // Replace illegal characters.
+        url = url.replaceAll("[:/\\\\.$<>]+", "_");
+        // Add the extension, if it exists.
+        if (extension != null) {
+            url = url + extension;
+        }
+        return url.trim();
+    }
+
+    private File findSimilarFile(File bookFolder, String fileName) {
+        final File[] files = bookFolder.listFiles();
+        if (files != null) {
+            for (File file : files) {
+                if (file.getName().startsWith(fileName)) {
+                    return file;
+                }
+            }
+        }
+        return null;
     }
 }
