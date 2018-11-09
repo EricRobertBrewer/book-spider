@@ -275,12 +275,10 @@ public class Amazon extends SiteScraper {
             // Extract the raw inner HTML.
             final String html = element.getAttribute("innerHTML");
             // Check for and download any images within image (`img`) tags.
-            // See `https://stackoverflow.com/questions/6020384/create-array-of-regex-matches`.
-            Pattern.compile("<img[^>]*? src=\"([^\"]+)\"[^>]*?>")
-                    .matcher(html)
-                    .results()
-                    .map(matchResult -> matchResult.group(1))
-                    .forEach(url -> imagesQueue.offer(new ImageInfo(url, bookFolder)));
+            final String[] imageUrls = getImageUrls(html);
+            for (String url : imageUrls) {
+                imagesQueue.offer(new ImageInfo(url, bookFolder));
+            }
             // On every relevant LEAF-ELEMENT, check for a `background-image` CSS attribute.
             final String backgroundImageValue = element.getCssValue("background-image");
             if (backgroundImageValue != null && !backgroundImageValue.isEmpty() && !"none".equals(backgroundImageValue)) {
@@ -361,6 +359,15 @@ public class Amazon extends SiteScraper {
         return true;
     }
 
+    private static String[] getImageUrls(String html) {
+        // See `https://stackoverflow.com/questions/6020384/create-array-of-regex-matches`.
+        return Pattern.compile("<img[^>]*? src=\"([^\"]+)\"[^>]*?>")
+                .matcher(html)
+                .results()
+                .map(matchResult -> matchResult.group(1))
+                .toArray(String[]::new);
+    }
+
     private static class ImageInfo {
         final String url;
         final File bookFolder;
@@ -374,7 +381,7 @@ public class Amazon extends SiteScraper {
     private void downloadImages(OkHttpClient client, Queue<ImageInfo> imagesQueue, boolean force) {
         getLogger().log(Level.INFO, "Downloading images...");
         while (isScrapingBooks.get() || !imagesQueue.isEmpty()) {
-            //
+            // Wait for image queue to fill.
             if (imagesQueue.isEmpty()) {
                 try {
                     Thread.sleep(10000L);
@@ -383,16 +390,15 @@ public class Amazon extends SiteScraper {
                 }
                 continue;
             }
+            // Download the image.
             final ImageInfo imageInfo = imagesQueue.poll();
             getLogger().log(Level.INFO, "Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.");
+            // Check for an existing file with the same name, optionally with a file extension.
             final String imageFileNameCandidate = getImageFileName(imageInfo.url);
             final File imageFile;
             final File similarImageFile = findSimilarFile(imageInfo.bookFolder, imageFileNameCandidate);
-            if (similarImageFile != null) {
-                imageFile = similarImageFile;
-            } else {
-                imageFile = new File(imageInfo.bookFolder, imageFileNameCandidate);
-            }
+            imageFile = Objects.requireNonNullElseGet(similarImageFile, () -> new File(imageInfo.bookFolder, imageFileNameCandidate));
+            // Process `force` flag.
             if (imageFile.exists()) {
                 if (force) {
                     if (!imageFile.delete()) {
@@ -419,8 +425,6 @@ public class Amazon extends SiteScraper {
                             final String contentType = response.header("Content-Type");
                             final File newImageFile;
                             if ("image/jpeg".equalsIgnoreCase(contentType)) {
-                                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpeg");
-                            } else if ("image/jpg".equalsIgnoreCase(contentType)) {
                                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpg");
                             } else if ("image/png".equalsIgnoreCase(contentType)) {
                                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".png");
@@ -428,6 +432,7 @@ public class Amazon extends SiteScraper {
                                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".gif");
                             } else {
                                 // No luck.
+                                getLogger().log(Level.WARNING, "Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.");
                                 newImageFile = imageFile;
                             }
                             Files.copy(response.body().byteStream(), newImageFile.toPath());
@@ -435,9 +440,9 @@ public class Amazon extends SiteScraper {
                     }
                     break;
                 } catch (IOException e) {
-                    getLogger().log(Level.WARNING, "Encountered IOException while downloading image `" + imageInfo.url + "`.", e);
+                    getLogger().log(Level.WARNING, "Encountered IOException while downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", e);
                 } catch (Throwable t) {
-                    getLogger().log(Level.WARNING, "Encountered unknown error while downloading image `" + imageInfo.url + "`.", t);
+                    getLogger().log(Level.WARNING, "Encountered unknown error while downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", t);
                 }
                 retries--;
             }
@@ -457,10 +462,8 @@ public class Amazon extends SiteScraper {
         }
         // Check for a file extension.
         String extension = null;
-        if (url.endsWith(".jpg")) {
+        if (url.endsWith(".jpeg") || url.endsWith(".jpg")) {
             extension = ".jpg";
-        } else if (url.endsWith(".jpeg")) {
-            extension = ".jpeg";
         } else if (url.endsWith(".png")) {
             extension = ".png";
         } else if (url.endsWith(".gif")) {
@@ -472,8 +475,6 @@ public class Amazon extends SiteScraper {
         } else if (parameters != null) {
             // When no extension exists, check the parameters for a MIME type.
             if (parameters.contains("mime=image/jpeg")) {
-                extension = ".jpeg";
-            } else if (parameters.contains("mime=image/jpg")) {
                 extension = ".jpg";
             } else if (parameters.contains("mime=image/png")) {
                 extension = ".png";
@@ -490,7 +491,7 @@ public class Amazon extends SiteScraper {
         return url.trim();
     }
 
-    private File findSimilarFile(File bookFolder, String fileName) {
+    private static File findSimilarFile(File bookFolder, String fileName) {
         final File[] files = bookFolder.listFiles();
         if (files != null) {
             for (File file : files) {
@@ -500,5 +501,42 @@ public class Amazon extends SiteScraper {
             }
         }
         return null;
+    }
+
+    @SuppressWarnings("unused")
+    private static class MoveFiles {
+
+        public static void main(String[] args) throws IOException {
+            if (args.length < 2 || args.length > 2) {
+                throw new IllegalArgumentException("Usage: <content-source-folder> <content-destination-folder>");
+            }
+            final File sourceFolder = new File(args[0]);
+            if (!sourceFolder.isDirectory()) {
+                throw new IllegalArgumentException("`" + args[0] + "` is not a directory.");
+            }
+            final File contentDestinationFolder = new File(args[1]);
+            if (!contentDestinationFolder.exists() && !contentDestinationFolder.mkdirs()) {
+                throw new IOException("Unable to create directory `" + args[1] + "`.");
+            }
+            final File[] sourceFiles = sourceFolder.listFiles();
+            if (sourceFiles == null || sourceFiles.length == 0) {
+                throw new IllegalArgumentException("Source directory `" + args[0] + "` is empty.");
+            }
+            for (File sourceFile : sourceFiles) {
+                final String fullName = sourceFile.getName();
+                final String baseName = fullName.substring(0, fullName.length() - 4);
+                final File destinationFolder = new File(contentDestinationFolder, baseName);
+                if (!destinationFolder.exists() && !destinationFolder.mkdirs()) {
+                    throw new IOException("Unable to create destination folder `" + destinationFolder.getName() + "`.");
+                }
+                final File destinationFile = new File(destinationFolder, "text.txt");
+                if (destinationFile.exists()) {
+                    continue;
+                }
+                if (!sourceFile.renameTo(destinationFile)) {
+                    throw new IOException("Unable to rename source file `" + sourceFile.getName() + "`.");
+                }
+            }
+        }
     }
 }
