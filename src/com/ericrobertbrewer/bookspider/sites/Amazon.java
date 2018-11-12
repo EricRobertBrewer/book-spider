@@ -218,11 +218,11 @@ public class Amazon extends SiteScraper {
         }
         try {
             final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
-            writeBookContents(driver, sitbReaderFrame, bookFolder, imagesQueue);
+            writeBookText(driver, sitbReaderFrame, bookFolder, imagesQueue);
         } catch (NoSuchElementException e) {
             // This page does not have an `iframe` element.
             // That is OK. The book contents are simply embedded in the same page.
-            writeBookContents(driver, sitbReaderKindleSampleDiv, bookFolder, imagesQueue);
+            writeBookText(driver, sitbReaderKindleSampleDiv, bookFolder, imagesQueue);
         }
     }
 
@@ -240,9 +240,9 @@ public class Amazon extends SiteScraper {
         return null;
     }
 
-    private void writeBookContents(WebDriver driver, WebElement rootElement, File bookFolder, Queue<ImageInfo> imagesQueue) throws IOException {
+    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, Queue<ImageInfo> imagesQueue) throws IOException {
         // Create the book text file.
-        final File textFile = new File(bookFolder, "text.txt");
+        final File textFile = new File(bookFolder, "book.txt");
         if (!textFile.createNewFile()) {
             getLogger().log(Level.SEVERE, "Unable to create book text file `" + textFile.getPath() + "`.");
             return;
@@ -252,11 +252,11 @@ public class Amazon extends SiteScraper {
             return;
         }
         final PrintStream out = new PrintStream(textFile);
-        writeElementContents(driver, rootElement, bookFolder, out, imagesQueue);
+        writeElementText(driver, rootElement, bookFolder, out, imagesQueue);
         out.close();
     }
 
-    private void writeElementContents(WebDriver driver, WebElement element, File bookFolder, PrintStream out, Queue<ImageInfo> imagesQueue) {
+    private void writeElementText(WebDriver driver, WebElement element, File bookFolder, PrintStream out, Queue<ImageInfo> imagesQueue) {
         // Search recursively for matching children.
         final List<WebElement> children = element.findElements(By.xpath("./*"));
         if (children.size() == 0 || areAllFormatting(children)) {
@@ -269,7 +269,7 @@ public class Amazon extends SiteScraper {
             } else if ("iframe".equals(tag)) {
                 driver.switchTo().frame(element);  // Does this need to be undone?
                 final WebElement frameBody = driver.findElement(By.tagName("body"));
-                writeElementContents(driver, frameBody, bookFolder, out, imagesQueue);
+                writeElementText(driver, frameBody, bookFolder, out, imagesQueue);
                 return;
             }
             // Extract the raw inner HTML.
@@ -311,7 +311,7 @@ public class Amazon extends SiteScraper {
             out.println(text);
         } else {
             for (WebElement child : children) {
-                writeElementContents(driver, child, bookFolder, out, imagesQueue);
+                writeElementText(driver, child, bookFolder, out, imagesQueue);
             }
         }
     }
