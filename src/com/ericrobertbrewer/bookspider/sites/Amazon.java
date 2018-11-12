@@ -282,7 +282,13 @@ public class Amazon extends SiteScraper {
             // On every relevant LEAF-ELEMENT, check for a `background-image` CSS attribute.
             final String backgroundImageValue = element.getCssValue("background-image");
             if (backgroundImageValue != null && !backgroundImageValue.isEmpty() && !"none".equals(backgroundImageValue)) {
-                imagesQueue.offer(new ImageInfo(backgroundImageValue.trim(), bookFolder));
+                final String url;
+                if (backgroundImageValue.startsWith("url(\"") && backgroundImageValue.endsWith("\")")) {
+                    url = backgroundImageValue.substring(5, backgroundImageValue.length() - 2).trim();
+                } else {
+                    url = backgroundImageValue.trim();
+                }
+                imagesQueue.offer(new ImageInfo(url, bookFolder));
             }
             // Convert HTML to human-readable text.
             final String text = html
