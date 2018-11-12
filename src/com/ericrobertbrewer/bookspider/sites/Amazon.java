@@ -432,7 +432,9 @@ public class Amazon extends SiteScraper {
                                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".gif");
                             } else {
                                 // No luck.
-                                getLogger().log(Level.WARNING, "Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.");
+                                if (contentType != null) {
+                                    getLogger().log(Level.WARNING, "Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.");
+                                }
                                 newImageFile = imageFile;
                             }
                             Files.copy(response.body().byteStream(), newImageFile.toPath());
