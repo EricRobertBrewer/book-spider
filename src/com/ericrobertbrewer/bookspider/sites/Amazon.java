@@ -91,30 +91,9 @@ public class Amazon extends SiteScraper {
     }
 
     private void scrapeBookText(String bookId, String url, WebDriver driver, File contentFolder, Queue<ImageInfo> imagesQueue, boolean force) throws IOException, NoSuchElementException {
-        // Check if contents for this book already exist.
+        // Create the book folder if it doesn't exist.
         final File bookFolder = new File(contentFolder, bookId);
-        if (bookFolder.exists()) {
-            if (force) {
-                // `force`==`true`. Delete the existing folder and its contents.
-                // Delete contents of folder.
-                final File[] files = bookFolder.listFiles();
-                if (files != null) {
-                    for (File file : files) {
-                        if (!file.delete()) {
-                            throw new IOException("Unable to delete content file `" + file.getPath() + "`.");
-                        }
-                    }
-                }
-                // Delete folder itself.
-                if (!bookFolder.delete()) {
-                    throw new IOException("Unable to delete existing book folder for `" + bookId + "` when `force`==`true`.");
-                }
-            } else {
-                // `force`==`false`. Quit.
-                return;
-            }
-        }
-        if (!bookFolder.mkdirs()) {
+        if (!bookFolder.exists() && !bookFolder.mkdirs()) {
             throw new IOException("Unable to create book folder for `" + bookId + "`.");
         }
         // Scrape the book contents.
@@ -219,11 +198,11 @@ public class Amazon extends SiteScraper {
         }
         try {
             final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
-            writeBookText(driver, sitbReaderFrame, bookFolder, imagesQueue);
+            writeBookText(driver, sitbReaderFrame, bookFolder, imagesQueue, force);
         } catch (NoSuchElementException e) {
             // This page does not have an `iframe` element.
             // That is OK. The book contents are simply embedded in the same page.
-            writeBookText(driver, sitbReaderKindleSampleDiv, bookFolder, imagesQueue);
+            writeBookText(driver, sitbReaderKindleSampleDiv, bookFolder, imagesQueue, force);
         }
     }
 
@@ -241,15 +220,27 @@ public class Amazon extends SiteScraper {
         return null;
     }
 
-    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, Queue<ImageInfo> imagesQueue) throws IOException {
-        // Create the book text file.
+    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, Queue<ImageInfo> imagesQueue, boolean force) throws IOException {
+        // Check if contents for this book already exist.
         final File textFile = new File(bookFolder, "book.txt");
+        if (textFile.exists()) {
+            if (force) {
+                // `force`==`true`. Delete the existing file.
+                if (!textFile.delete()) {
+                    throw new IOException("Unable to delete existing book text file for `" + bookFolder.getName() + "` when `force`==`true`.");
+                }
+            } else {
+                // `force`==`false`. Quit.
+                return;
+            }
+        }
+        // Create the book text file.
         if (!textFile.createNewFile()) {
-            getLogger().log(Level.SEVERE, "Unable to create book text file `" + textFile.getPath() + "`.");
+            getLogger().log(Level.SEVERE, "Unable to create book text file for `" + bookFolder.getName() + "`.");
             return;
         }
         if (!textFile.canWrite() && !textFile.setWritable(true)) {
-            getLogger().log(Level.SEVERE, "Unable to write to book text file `" + textFile.getPath() + "`.");
+            getLogger().log(Level.SEVERE, "Unable to write to book text file for `" + bookFolder.getName() + "`.");
             return;
         }
         final PrintStream out = new PrintStream(textFile);
