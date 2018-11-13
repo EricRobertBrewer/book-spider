@@ -13,7 +13,7 @@ public class Folders {
     /**
      * Root of downloaded (scraped) content.
      */
-    private static final String CONTENT_ROOT = "content" + SLASH;
+    private static final String CONTENT_ROOT = ".." + SLASH + "content" + SLASH;
     /**
      * Root of log files.
      */
