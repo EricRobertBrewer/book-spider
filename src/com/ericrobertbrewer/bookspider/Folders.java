@@ -38,7 +38,7 @@ public class Folders {
 
     private static final DateFormat LOG_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
 
-    private static File getLogsFolder(String id) throws IOException {
+    public static File getLogsFolder(String id) throws IOException {
         final File folder = new File(LOGS_ROOT + id + SLASH);
         if (!folder.exists() && !folder.mkdirs()) {
             throw new IOException("Unable to create logs folder: `" + folder.getPath() + "`.");
