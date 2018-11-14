@@ -259,9 +259,10 @@ public class Amazon extends SiteScraper {
                 // Ignore.
                 return;
             } else if ("iframe".equals(tag)) {
-                driver.switchTo().frame(element);  // Does this need to be undone?
+                driver.switchTo().frame(element);
                 final WebElement frameBody = driver.findElement(By.tagName("body"));
                 writeElementText(driver, frameBody, bookFolder, out, imagesQueue);
+                driver.switchTo().parentFrame();
                 return;
             }
             // Extract the raw inner HTML.
