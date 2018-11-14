@@ -396,7 +396,6 @@ public class Amazon extends SiteScraper {
             }
             // Download the image.
             final ImageInfo imageInfo = imagesQueue.poll();
-            getLogger().log(Level.INFO, "Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.");
             // Check for an existing file with the same name, optionally with a file extension.
             final String imageFileNameCandidate = getImageFileName(imageInfo.url);
             final File imageFile;
@@ -430,6 +429,12 @@ public class Amazon extends SiteScraper {
     }
 
     private static void downloadImage(OkHttpClient client, ImageInfo imageInfo, File imageFile, Logger logger) throws IOException {
+        final String downloadMsg = "Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.";
+        if (logger != null) {
+            logger.log(Level.INFO, downloadMsg);
+        } else {
+            System.out.println(downloadMsg);
+        }
         final Request request = new Request.Builder()
                 .url(imageInfo.url)
                 .build();
@@ -454,14 +459,19 @@ public class Amazon extends SiteScraper {
                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".svg");
             } else if ("image/bmp".equalsIgnoreCase(contentType)) {
                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".bmp");
+            } else if ("text/plain".equalsIgnoreCase(contentType)) {
+                // This occurs sometimes when a URL contains a parameter `mime=image/*`.
+                // It's usually a cover image (`resource/0`), and is probably an `image/jpeg`, but is never plaintext.
+                // Err on the side of caution - don't add an extension, since we're not 100% sure.
+                newImageFile = imageFile;
             } else {
                 // No luck.
                 if (contentType != null) {
-                    final String msg = "Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.";
+                    final String unknownContentTypeMsg = "Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.";
                     if (logger != null) {
-                        logger.log(Level.WARNING, msg);
+                        logger.log(Level.WARNING, unknownContentTypeMsg);
                     } else {
-                        System.err.println(msg);
+                        System.err.println(unknownContentTypeMsg);
                     }
                 }
                 newImageFile = imageFile;
@@ -520,11 +530,12 @@ public class Amazon extends SiteScraper {
         return url.trim();
     }
 
-    private static File findSimilarFile(File bookFolder, String fileName) {
+    private static File findSimilarFile(File bookFolder, String candidateName) {
         final File[] files = bookFolder.listFiles();
         if (files != null) {
             for (File file : files) {
-                if (file.getName().startsWith(fileName)) {
+                final String fileName = file.getName();
+                if (fileName.startsWith(candidateName)) {
                     return file;
                 }
             }
