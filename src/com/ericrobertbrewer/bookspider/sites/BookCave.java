@@ -747,7 +747,7 @@ public class BookCave extends SiteScraper {
             }
             databaseHelper.close();
             final List<String> bookIds = new ArrayList<>();
-            final List<String> urls = new ArrayList<>();
+            final List<String[]> bookUrls = new ArrayList<>();
             for (Book book : allBooks) {
                 // Skip unattainable books.
                 if (book.amazonKindleUrl == null && book.amazonPrintUrl == null) {
@@ -755,12 +755,17 @@ public class BookCave extends SiteScraper {
                 }
                 bookIds.add(book.id);
                 if (book.amazonKindleUrl == null) {
-                    urls.add(book.amazonPrintUrl);
+                    bookUrls.add(new String[] {book.amazonPrintUrl});
+                } else if (book.amazonPrintUrl == null) {
+                    bookUrls.add(new String[] {book.amazonKindleUrl});
                 } else {
-                    urls.add(book.amazonKindleUrl);
+                    // Give multiple options for Amazon URLs.
+                    // Sometimes the BookCave Kindle link will have broken, though a Kindle preview still exists.
+                    // See `https://mybookcave.com/mybookratings/rated-book/the-warriors-path/`.
+                    bookUrls.add(new String[] {book.amazonKindleUrl, book.amazonPrintUrl});
                 }
             }
-            return new Amazon(logger, bookIds, urls);
+            return new Amazon(logger, bookIds, bookUrls);
         }
 
         @Override

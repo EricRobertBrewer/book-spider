@@ -26,15 +26,15 @@ import java.util.regex.Pattern;
 public class Amazon extends SiteScraper {
 
     private final List<String> bookIds;
-    private final List<String> urls;
+    private final List<String[]> bookUrls;
 
     private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
     private final AtomicBoolean isDownloadingImages = new AtomicBoolean(false);
 
-    Amazon(Logger logger, List<String> bookIds, List<String> urls) {
+    Amazon(Logger logger, List<String> bookIds, List<String[]> bookUrls) {
         super(logger);
         this.bookIds = bookIds;
-        this.urls = urls;
+        this.bookUrls = bookUrls;
     }
 
     @Override
@@ -72,20 +72,25 @@ public class Amazon extends SiteScraper {
     private void scrapeBookTexts(WebDriver driver, File contentFolder, Queue<ImageInfo> imagesQueue, boolean force) {
         for (int i = 0; i < bookIds.size(); i++) {
             final String bookId = bookIds.get(i);
-            final String url = urls.get(i);
-            int retries = 3;
-            while (retries > 0) {
-                try {
-                    scrapeBookText(bookId, url, driver, contentFolder, imagesQueue, force);
-                    break;
-                } catch (IOException e) {
-                    getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookId + "`.", e);
-                } catch (NoSuchElementException e) {
-                    getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookId + "`.", e);
-                } catch (Throwable t) {
-                    getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + bookId + "`.", t);
+            final String[] urls = bookUrls.get(i);
+            boolean success = false;
+            for (int j = 0; j < urls.length && !success; j++) {
+                final String url = urls[j];
+                int retries = 3;
+                while (retries > 0) {
+                    try {
+                        scrapeBookText(bookId, url, driver, contentFolder, imagesQueue, force);
+                        success = true;
+                        break;
+                    } catch (IOException e) {
+                        getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookId + "`.", e);
+                    } catch (NoSuchElementException e) {
+                        getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookId + "`.", e);
+                    } catch (Throwable t) {
+                        getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + bookId + "`.", t);
+                    }
+                    retries--;
                 }
-                retries--;
             }
         }
     }
