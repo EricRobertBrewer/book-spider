@@ -101,6 +101,19 @@ public class Amazon extends SiteScraper {
         if (!bookFolder.exists() && !bookFolder.mkdirs()) {
             throw new IOException("Unable to create book folder for `" + bookId + "`.");
         }
+        // Check if contents for this book already exist.
+        final File textFile = new File(bookFolder, "book.txt");
+        if (textFile.exists()) {
+            if (force) {
+                // `force`==`true`. Delete the existing file.
+                if (!textFile.delete()) {
+                    throw new IOException("Unable to delete existing book text file for `" + bookFolder.getName() + "` when `force`==`true`.");
+                }
+            } else {
+                // `force`==`false`. Quit.
+                return;
+            }
+        }
         // Scrape the book contents.
         getLogger().log(Level.INFO, "Scraping text for book `" + bookId + "`.");
         driver.navigate().to(url);
@@ -203,11 +216,11 @@ public class Amazon extends SiteScraper {
         }
         try {
             final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
-            writeBookText(driver, sitbReaderFrame, bookFolder, imagesQueue, force);
+            writeBookText(driver, sitbReaderFrame, bookFolder, textFile, imagesQueue, force);
         } catch (NoSuchElementException e) {
             // This page does not have an `iframe` element.
             // That is OK. The book contents are simply embedded in the same page.
-            writeBookText(driver, sitbReaderKindleSampleDiv, bookFolder, imagesQueue, force);
+            writeBookText(driver, sitbReaderKindleSampleDiv, bookFolder, textFile, imagesQueue, force);
         }
     }
 
@@ -225,20 +238,7 @@ public class Amazon extends SiteScraper {
         return null;
     }
 
-    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, Queue<ImageInfo> imagesQueue, boolean force) throws IOException {
-        // Check if contents for this book already exist.
-        final File textFile = new File(bookFolder, "book.txt");
-        if (textFile.exists()) {
-            if (force) {
-                // `force`==`true`. Delete the existing file.
-                if (!textFile.delete()) {
-                    throw new IOException("Unable to delete existing book text file for `" + bookFolder.getName() + "` when `force`==`true`.");
-                }
-            } else {
-                // `force`==`false`. Quit.
-                return;
-            }
-        }
+    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, File textFile, Queue<ImageInfo> imagesQueue, boolean force) throws IOException {
         // Create the book text file.
         if (!textFile.createNewFile()) {
             getLogger().log(Level.SEVERE, "Unable to create book text file for `" + bookFolder.getName() + "`.");
