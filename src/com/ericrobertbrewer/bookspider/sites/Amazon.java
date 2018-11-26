@@ -216,11 +216,11 @@ public class Amazon extends SiteScraper {
         }
         try {
             final WebElement sitbReaderFrame = sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
-            writeBookText(driver, sitbReaderFrame, bookFolder, textFile, imagesQueue, force);
+            writeBookText(driver, sitbReaderFrame, bookFolder, textFile, imagesQueue);
         } catch (NoSuchElementException e) {
             // This page does not have an `iframe` element.
             // That is OK. The book contents are simply embedded in the same page.
-            writeBookText(driver, sitbReaderKindleSampleDiv, bookFolder, textFile, imagesQueue, force);
+            writeBookText(driver, sitbReaderKindleSampleDiv, bookFolder, textFile, imagesQueue);
         }
     }
 
@@ -238,7 +238,7 @@ public class Amazon extends SiteScraper {
         return null;
     }
 
-    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, File textFile, Queue<ImageInfo> imagesQueue, boolean force) throws IOException {
+    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, File textFile, Queue<ImageInfo> imagesQueue) throws IOException {
         // Create the book text file.
         if (!textFile.createNewFile()) {
             getLogger().log(Level.SEVERE, "Unable to create book text file for `" + bookFolder.getName() + "`.");
