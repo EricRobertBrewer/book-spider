@@ -14,6 +14,7 @@ import org.openqa.selenium.NoSuchElementException;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.util.*;
@@ -439,12 +440,14 @@ public class Amazon extends SiteScraper {
             logOrPrint("Failed to retrieve response from `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
             return;
         }
+        final InputStream byteStream = response.body().byteStream();
+        final File newImageFile;
         if (imageFile.getName().contains(".")) {
-            Files.copy(response.body().byteStream(), imageFile.toPath());
+            // The file already has a proper extension.
+            newImageFile = imageFile;
         } else {
-            // Look for a `Content-Type`.
+            // Look for a known `Content-Type` in the response header.
             final String contentType = response.header("Content-Type");
-            final File newImageFile;
             if ("image/jpeg".equalsIgnoreCase(contentType)) {
                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpg");
             } else if ("image/png".equalsIgnoreCase(contentType)) {
@@ -455,20 +458,47 @@ public class Amazon extends SiteScraper {
                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".svg");
             } else if ("image/bmp".equalsIgnoreCase(contentType)) {
                 newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".bmp");
-            } else if ("text/plain".equalsIgnoreCase(contentType)) {
-                // This occurs sometimes when a URL contains a parameter `mime=image/*`.
-                // It's usually a cover image (`resource/0`), and is probably an `image/jpeg`, but is never plaintext.
-                // Err on the side of caution - don't add an extension, since we're not 100% sure.
-                newImageFile = imageFile;
             } else {
-                // No luck.
                 if (contentType != null) {
                     logOrPrint("Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
                 }
-                newImageFile = imageFile;
+                // "Sniff" the first few bytes of the file contents.
+                // See `https://tools.ietf.org/id/draft-abarth-mime-sniff-06.html#rfc.section.6`.
+                final byte[] bytes = new byte[8];
+                if (byteStream.read(bytes) == bytes.length) {
+                    // Two's complement: A Java `byte` is shifted 1 place to the right from its
+                    // unsigned hexadecimal pattern in order to represent negative values.
+                    if (bytes[0] == (0xFF >> 1) && bytes[1] == (0xD8 >> 1) && bytes[2] == (0xFF >> 1)) {
+                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpg");
+                    } else if (bytes[0] == (0x89 >> 1) && bytes[1] == (0x50 >> 1) && bytes[2] == (0x4E >> 1) && bytes[3] == (0x47 >> 1) &&
+                            bytes[4] == (0x0D >> 1) && bytes[5] == (0x0A >> 1) && bytes[6] == (0x1A >> 1) && bytes[7] == (0x0A >> 1)) {
+                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".png");
+                    } else if (bytes[0] == (0x47 >> 1) && bytes[1] == (0x49 >> 1) && bytes[2] == (0x46 >> 1) && bytes[3] == (0x38 >> 1) &&
+                            (bytes[4] == (0x37 >> 1) || bytes[4] == (0x39 >> 1)) &&
+                            bytes[5] == (0x61 >> 1)) {
+                        // 'GIF87a' or 'GIF89a'.
+                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".gif");
+                    } else if (bytes[0] == (0x42 >> 1) && bytes[1] == (0x4D >> 1)) {
+                        // 'BM'.
+                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".bmp");
+                    } else {
+                        // No luck.
+                        final StringBuilder bytePattern = new StringBuilder();
+                        for (byte b : bytes) {
+                            if (bytePattern.length() != 0) {
+                                bytePattern.append(" ");
+                            }
+                            bytePattern.append(String.format("%02X", b));
+                        }
+                        logOrPrint("Found unknown bit pattern `" + bytePattern + "` in image file without file extension for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
+                        newImageFile = imageFile;
+                    }
+                } else {
+                    newImageFile = imageFile;
+                }
             }
-            Files.copy(response.body().byteStream(), newImageFile.toPath());
         }
+        Files.copy(byteStream, newImageFile.toPath());
     }
 
     private static String getImageFileName(String url) {
