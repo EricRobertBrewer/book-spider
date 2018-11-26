@@ -1,7 +1,6 @@
 package com.ericrobertbrewer.bookspider.sites;
 
 
-import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.SiteScraper;
 import com.ericrobertbrewer.web.WebDriverFactory;
@@ -571,120 +570,6 @@ public class Amazon extends SiteScraper {
             System.err.println(msg);
         } else {
             System.out.println(msg);
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private static class MoveFiles {
-
-        public static void main(String[] args) throws IOException {
-            if (args.length < 2 || args.length > 2) {
-                throw new IllegalArgumentException("Usage: <content-source-folder> <content-destination-folder>");
-            }
-            final File sourceFolder = new File(args[0]);
-            if (!sourceFolder.isDirectory()) {
-                throw new IllegalArgumentException("`" + args[0] + "` is not a directory.");
-            }
-            final File contentDestinationFolder = new File(args[1]);
-            if (!contentDestinationFolder.exists() && !contentDestinationFolder.mkdirs()) {
-                throw new IOException("Unable to create directory `" + args[1] + "`.");
-            }
-            final File[] sourceFiles = sourceFolder.listFiles();
-            if (sourceFiles == null || sourceFiles.length == 0) {
-                throw new IllegalArgumentException("Source directory `" + args[0] + "` is empty.");
-            }
-            for (File sourceFile : sourceFiles) {
-                final String fullName = sourceFile.getName();
-                final String baseName = fullName.substring(0, fullName.length() - 4);
-                final File destinationFolder = new File(contentDestinationFolder, baseName);
-                if (!destinationFolder.exists() && !destinationFolder.mkdirs()) {
-                    throw new IOException("Unable to create destination folder `" + destinationFolder.getName() + "`.");
-                }
-                final File destinationFile = new File(destinationFolder, "text.txt");
-                if (destinationFile.exists()) {
-                    continue;
-                }
-                if (!sourceFile.renameTo(destinationFile)) {
-                    throw new IOException("Unable to rename source file `" + sourceFile.getName() + "`.");
-                }
-            }
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private static class DownloadBackgroundImages {
-
-        public static void main(String[] args) throws IOException {
-            if (args.length < 1 || args.length > 2) {
-                throw new IllegalArgumentException("Usage: <log-file-name> [force]");
-            }
-            // Get log file name.
-            final String logFileName = args[0];
-            final File logFile = new File(Folders.getLogsFolder(Folders.ID_BOOK_CAVE_AMAZON), logFileName);
-            if (!logFile.exists()) {
-                throw new IllegalArgumentException("Cannot find log file `" + logFile.getPath() + "`.");
-            }
-            // Check `force` flag.
-            final boolean force;
-            if (args.length > 1) {
-                force = Boolean.parseBoolean(args[1]);
-            } else {
-                force = false;
-            }
-            final Scanner scanner = new Scanner(logFile);
-            final File contentFolder = Folders.getContentFolder(Folders.ID_BOOK_CAVE_AMAZON);
-            final OkHttpClient client = new OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .writeTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(30, TimeUnit.SECONDS)
-                    .build();
-            final String unknownErrorUrlStart = "WARNING: Encountered unknown error while downloading image `url(\"";
-            while (scanner.hasNextLine()) {
-                final String line = scanner.nextLine();
-                if (!line.startsWith(unknownErrorUrlStart)) {
-                    continue;
-                }
-                final int bookIdIndexEnd = line.lastIndexOf("`");
-                final int bookIdIndexStart = line.lastIndexOf("`", bookIdIndexEnd - 1);
-                final String bookId = line.substring(bookIdIndexStart + 1, bookIdIndexEnd);
-                final File bookFolder = new File(contentFolder, bookId);
-                if (!bookFolder.exists()) {
-                    System.err.println("Cannot find book folder `" + bookFolder.getName() + "`.");
-                    continue;
-                }
-                final int urlIndexEnd = line.lastIndexOf("\"", bookIdIndexStart - 1);
-                final String url = line.substring(unknownErrorUrlStart.length(), urlIndexEnd);
-                final String imageFileNameCandidate = getImageFileName(url);
-                final ImageInfo imageInfo = new ImageInfo(url, bookFolder);
-                final File imageFile;
-                final File similarImageFile = findSimilarFile(imageInfo.bookFolder, imageFileNameCandidate);
-                imageFile = Objects.requireNonNullElseGet(similarImageFile, () -> new File(imageInfo.bookFolder, imageFileNameCandidate));
-                // Process `force` flag.
-                if (imageFile.exists()) {
-                    if (force) {
-                        if (!imageFile.delete()) {
-                            System.err.println("Unable to delete image file `" + imageFile.getPath() + "`.");
-                            continue;
-                        }
-                    } else {
-                        continue;
-                    }
-                }
-                System.out.println("Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.");
-                int retries = 3;
-                while (retries > 0) {
-                    try {
-                        downloadImage(client, imageInfo, imageFile, null);
-                        break;
-                    } catch (IOException e) {
-                        System.err.println("Encountered IOException while downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.");
-                    } catch (Throwable t) {
-                        System.err.println("Encountered unknown error while downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.");
-                    }
-                    retries--;
-                }
-            }
-            scanner.close();
         }
     }
 }
