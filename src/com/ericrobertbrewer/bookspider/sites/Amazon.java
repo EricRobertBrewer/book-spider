@@ -509,7 +509,7 @@ public class Amazon extends SiteScraper {
             url = url.substring(0, url.length() - extension.length());
         } else if (parameters != null) {
             // When no extension exists, check the parameters for a MIME type.
-            if (parameters.contains("mime=image/jpeg")) {
+            if (parameters.contains("mime=image/jpeg") || parameters.contains("mime=image/jpg")) {
                 extension = ".jpg";
             } else if (parameters.contains("mime=image/png")) {
                 extension = ".png";
