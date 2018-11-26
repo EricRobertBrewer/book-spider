@@ -429,18 +429,14 @@ public class Amazon extends SiteScraper {
     }
 
     private static void downloadImage(OkHttpClient client, ImageInfo imageInfo, File imageFile, Logger logger) throws IOException {
-        final String downloadMsg = "Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.";
-        if (logger != null) {
-            logger.log(Level.INFO, downloadMsg);
-        } else {
-            System.out.println(downloadMsg);
-        }
+        logOrPrint("Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.INFO);
         final Request request = new Request.Builder()
                 .url(imageInfo.url)
                 .build();
         final Call call = client.newCall(request);
         final Response response = call.execute();
         if (response.body() == null) {
+            logOrPrint("Failed to retrieve response from `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
             return;
         }
         if (imageFile.getName().contains(".")) {
@@ -467,12 +463,7 @@ public class Amazon extends SiteScraper {
             } else {
                 // No luck.
                 if (contentType != null) {
-                    final String unknownContentTypeMsg = "Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.";
-                    if (logger != null) {
-                        logger.log(Level.WARNING, unknownContentTypeMsg);
-                    } else {
-                        System.err.println(unknownContentTypeMsg);
-                    }
+                    logOrPrint("Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
                 }
                 newImageFile = imageFile;
             }
@@ -541,6 +532,16 @@ public class Amazon extends SiteScraper {
             }
         }
         return null;
+    }
+
+    private static void logOrPrint(String msg, Logger logger, Level level) {
+        if (logger != null) {
+            logger.log(level, msg);
+        } else if (level == Level.SEVERE || level == Level.WARNING) {
+            System.err.println(msg);
+        } else {
+            System.out.println(msg);
+        }
     }
 
     @SuppressWarnings("unused")
