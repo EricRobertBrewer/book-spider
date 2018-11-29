@@ -20,6 +20,7 @@ public class FileDownloader {
 
     public interface Callback {
         boolean doStayAlive();
+
         void onComplete();
     }
 

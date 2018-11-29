@@ -113,8 +113,9 @@ public class CommonSenseMedia extends SiteScraper {
 
     /**
      * Performed by the frontier thread.
-     * @param driver Driver.
-     * @param frontier Queue of book IDs to scrape.
+     *
+     * @param driver      Driver.
+     * @param frontier    Queue of book IDs to scrape.
      * @param frontierOut Writer to file which contains unique book IDs.
      */
     private void exploreFrontier(WebDriver driver, Queue<String> frontier, PrintStream frontierOut) {
@@ -186,8 +187,9 @@ public class CommonSenseMedia extends SiteScraper {
 
     /**
      * Performed by the scrape thread.
-     * @param driver Driver.
-     * @param frontier Queue of book IDs to scrape.
+     *
+     * @param driver         Driver.
+     * @param frontier       Queue of book IDs to scrape.
      * @param databaseHelper To contents database. Should have already been connected.
      *                       This method does not close the connection to the database.
      */

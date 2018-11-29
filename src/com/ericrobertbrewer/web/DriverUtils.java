@@ -15,8 +15,9 @@ public class DriverUtils {
 
     /**
      * By 250 pixels.
-     * @param driver The driver.
-     * @param times Number of times to scroll down.
+     *
+     * @param driver      The driver.
+     * @param times       Number of times to scroll down.
      * @param delayMillis Number of milliseconds to delay after each downward scroll.
      */
     public static void scrollDown(WebDriver driver, int times, long delayMillis) {
@@ -36,8 +37,9 @@ public class DriverUtils {
 
     /**
      * Extract a concatenation of texts of child elements.
-     * @param element The element from which child elements will be found.
-     * @param by The criterion to find child elements.
+     *
+     * @param element   The element from which child elements will be found.
+     * @param by        The criterion to find child elements.
      * @param separator Used to separate text of different child elements.
      * @param formatter May be `null`. If provided, text from each child element will be formatted by this.
      * @return The concatenated text from the specified child elements.

@@ -116,8 +116,9 @@ public class BookCave extends SiteScraper {
 
     /**
      * Performed by the frontier thread.
-     * @param driver Driver.
-     * @param frontier Queue of book IDs to scrape.
+     *
+     * @param driver      Driver.
+     * @param frontier    Queue of book IDs to scrape.
      * @param frontierOut Writer to file which contains unique book IDs.
      */
     private void exploreFrontier(WebDriver driver, Queue<String> frontier, PrintStream frontierOut) {
@@ -189,8 +190,9 @@ public class BookCave extends SiteScraper {
 
     /**
      * Performed by the scrape thread.
-     * @param driver Driver.
-     * @param frontier Queue of book IDs to scrape.
+     *
+     * @param driver         Driver.
+     * @param frontier       Queue of book IDs to scrape.
      * @param databaseHelper To contents database. Should have already been connected.
      *                       This method does not close the connection to the database.
      */
@@ -308,10 +310,10 @@ public class BookCave extends SiteScraper {
                 book.smashwordsUrl = href;
             } else //noinspection StatementWithEmptyBody
                 if ("No retailer links available".equalsIgnoreCase(text)) {
-                // Do nothing.
-            } else {
-                getLogger().log(Level.WARNING, "Unknown purchase link found: `" + text + "`.");
-            }
+                    // Do nothing.
+                } else {
+                    getLogger().log(Level.WARNING, "Unknown purchase link found: `" + text + "`.");
+                }
         }
         // Extract the community rating info.
         final WebElement ratingsBarSection = siteInnerDiv.findElement(By.id("ratings-bar"));
@@ -465,6 +467,7 @@ public class BookCave extends SiteScraper {
      * Used as a blacklisting method when capturing text.
      */
     private static final Set<String> FORMATTING_TAGS = new HashSet<>();
+
     static {
         FORMATTING_TAGS.add("em");
         FORMATTING_TAGS.add("i");
@@ -755,14 +758,14 @@ public class BookCave extends SiteScraper {
                 }
                 bookIds.add(book.id);
                 if (book.amazonKindleUrl == null) {
-                    bookUrls.add(new String[] {book.amazonPrintUrl});
+                    bookUrls.add(new String[]{book.amazonPrintUrl});
                 } else if (book.amazonPrintUrl == null) {
-                    bookUrls.add(new String[] {book.amazonKindleUrl});
+                    bookUrls.add(new String[]{book.amazonKindleUrl});
                 } else {
                     // Give multiple options for Amazon URLs.
                     // Sometimes the BookCave Kindle link will have broken, though a Kindle preview still exists.
                     // See `https://mybookcave.com/mybookratings/rated-book/the-warriors-path/`.
-                    bookUrls.add(new String[] {book.amazonKindleUrl, book.amazonPrintUrl});
+                    bookUrls.add(new String[]{book.amazonKindleUrl, book.amazonPrintUrl});
                 }
             }
             return new AmazonPreview(logger, bookIds, bookUrls);

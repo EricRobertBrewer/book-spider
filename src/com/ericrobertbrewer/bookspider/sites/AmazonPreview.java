@@ -1,6 +1,5 @@
 package com.ericrobertbrewer.bookspider.sites;
 
-
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.SiteScraper;
 import com.ericrobertbrewer.web.FileDownloadInfo;
@@ -322,6 +321,7 @@ public class AmazonPreview extends SiteScraper {
      * Used as a blacklisting method when capturing text.
      */
     private static final Set<String> FORMATTING_TAGS = new HashSet<>();
+
     static {
         FORMATTING_TAGS.add("em");
         FORMATTING_TAGS.add("i");
