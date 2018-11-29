@@ -36,7 +36,7 @@ public class BookCave extends SiteScraper {
 
             @Override
             public String getId() {
-                return Folders.ID_BOOK_CAVE;
+                return Folders.ID_BOOKCAVE;
             }
         });
     }
@@ -717,15 +717,15 @@ public class BookCave extends SiteScraper {
     }
 
     @SuppressWarnings("unused")
-    private static class AmazonProvider implements Provider {
+    private static class AmazonPreviewProvider implements Provider {
 
         public static void main(String[] args) throws IOException {
-            Launcher.launch(args, new AmazonProvider());
+            Launcher.launch(args, new AmazonPreviewProvider());
         }
 
         @Override
         public Class<? extends SiteScraper> getScraperClass() {
-            return Amazon.class;
+            return AmazonPreview.class;
         }
 
         @Override
@@ -733,7 +733,7 @@ public class BookCave extends SiteScraper {
             // Get list of book names with IDs from database.
             final String databaseFileName;
             try {
-                databaseFileName = Folders.getContentFolder(Folders.ID_BOOK_CAVE) + Folders.SLASH + "contents.db";
+                databaseFileName = Folders.getContentFolder(Folders.ID_BOOKCAVE) + Folders.SLASH + "contents.db";
             } catch (IOException e) {
                 throw new RuntimeException("Unable to get database folder name.", e);
             }
@@ -765,12 +765,12 @@ public class BookCave extends SiteScraper {
                     bookUrls.add(new String[] {book.amazonKindleUrl, book.amazonPrintUrl});
                 }
             }
-            return new Amazon(logger, bookIds, bookUrls);
+            return new AmazonPreview(logger, bookIds, bookUrls);
         }
 
         @Override
         public String getId() {
-            return Folders.ID_BOOK_CAVE_AMAZON;
+            return Folders.ID_BOOKCAVE_AMAZON_PREVIEW;
         }
     }
 }

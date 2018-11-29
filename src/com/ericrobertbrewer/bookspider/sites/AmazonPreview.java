@@ -23,7 +23,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 
-public class Amazon extends SiteScraper {
+public class AmazonPreview extends SiteScraper {
 
     private final List<String> bookIds;
     private final List<String[]> bookUrls;
@@ -31,7 +31,7 @@ public class Amazon extends SiteScraper {
     private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
     private final AtomicBoolean isDownloadingImages = new AtomicBoolean(false);
 
-    Amazon(Logger logger, List<String> bookIds, List<String[]> bookUrls) {
+    AmazonPreview(Logger logger, List<String> bookIds, List<String[]> bookUrls) {
         super(logger);
         this.bookIds = bookIds;
         this.bookUrls = bookUrls;

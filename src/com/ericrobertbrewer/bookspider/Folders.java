@@ -19,10 +19,10 @@ public class Folders {
      */
     private static final String LOGS_ROOT = "logs" + SLASH;
 
-    public static final String ID_BOOK_CAVE = "bookcave";
-    public static final String ID_BOOK_CAVE_AMAZON = "bookcave_amazon";
-    public static final String ID_COMMON_SENSE_MEDIA = "commonsensemedia";
-    public static final String ID_NY_TIMES = "nytimes";
+    public static final String ID_BOOKCAVE = "bookcave";
+    public static final String ID_BOOKCAVE_AMAZON_PREVIEW = "bookcave_amazon_preview";
+    public static final String ID_COMMONSENSEMEDIA = "commonsensemedia";
+    public static final String ID_NYTIMES = "nytimes";
 
     public static File getContentFolder(String id) throws IOException {
         final File folder = new File(CONTENT_ROOT + id + SLASH);

@@ -36,7 +36,7 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
 
             @Override
             public String getId() {
-                return Folders.ID_NY_TIMES;
+                return Folders.ID_NYTIMES;
             }
         });
     }

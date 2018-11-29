@@ -38,7 +38,7 @@ public class CommonSenseMedia extends SiteScraper {
 
             @Override
             public String getId() {
-                return Folders.ID_COMMON_SENSE_MEDIA;
+                return Folders.ID_COMMONSENSEMEDIA;
             }
         });
     }
