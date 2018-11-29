@@ -3,21 +3,16 @@ package com.ericrobertbrewer.bookspider.sites;
 
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.SiteScraper;
+import com.ericrobertbrewer.web.FileDownloadInfo;
+import com.ericrobertbrewer.web.FileDownloader;
 import com.ericrobertbrewer.web.WebDriverFactory;
-import okhttp3.Call;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
-import java.nio.file.Files;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -29,7 +24,6 @@ public class AmazonPreview extends SiteScraper {
     private final List<String[]> bookUrls;
 
     private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
-    private final AtomicBoolean isDownloadingImages = new AtomicBoolean(false);
 
     AmazonPreview(Logger logger, List<String> bookIds, List<String[]> bookUrls) {
         super(logger);
@@ -39,37 +33,39 @@ public class AmazonPreview extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
-        final Queue<ImageInfo> imagesQueue = new LinkedList<>();
+        final Queue<FileDownloadInfo> imagesQueue = new LinkedList<>();
+        final FileDownloader fileDownloader = new FileDownloader();
         // Create scraping thread.
         final Thread scrapeThread = new Thread(() -> {
-            isScrapingBooks.set(true);
             final WebDriver driver = factory.newChromeDriver();
+            isScrapingBooks.set(true);
             scrapeBookTexts(driver, contentFolder, imagesQueue, force);
             driver.quit();
             isScrapingBooks.set(false);
-            if (!isDownloadingImages.get()) {
+            if (!fileDownloader.isDownloadingFiles.get()) {
                 callback.onComplete();
             }
         });
         scrapeThread.start();
-        // Create image download thread.
-        final Thread imagesThread = new Thread(() -> {
-            isDownloadingImages.set(true);
-            final OkHttpClient client = new OkHttpClient.Builder()
-                    .connectTimeout(10, TimeUnit.SECONDS)
-                    .writeTimeout(10, TimeUnit.SECONDS)
-                    .readTimeout(30, TimeUnit.SECONDS)
-                    .build();
-            downloadImages(client, imagesQueue, force);
-            isDownloadingImages.set(false);
-            if (!isScrapingBooks.get()) {
-                callback.onComplete();
+        // Start downloading images.
+        getLogger().log(Level.INFO, "Downloading images...");
+        fileDownloader.downloadFilesThreaded(imagesQueue, force, getLogger(), new FileDownloader.Callback() {
+            @Override
+            public boolean doStayAlive() {
+                return isScrapingBooks.get();
+            }
+
+            @Override
+            public void onComplete() {
+                getLogger().log(Level.INFO, "Finished downloading images.");
+                if (!isScrapingBooks.get()) {
+                    callback.onComplete();
+                }
             }
         });
-        imagesThread.start();
     }
 
-    private void scrapeBookTexts(WebDriver driver, File contentFolder, Queue<ImageInfo> imagesQueue, boolean force) {
+    private void scrapeBookTexts(WebDriver driver, File contentFolder, Queue<FileDownloadInfo> imagesQueue, boolean force) {
         for (int i = 0; i < bookIds.size(); i++) {
             final String bookId = bookIds.get(i);
             final String[] urls = bookUrls.get(i);
@@ -95,7 +91,7 @@ public class AmazonPreview extends SiteScraper {
         }
     }
 
-    private void scrapeBookText(String bookId, String url, WebDriver driver, File contentFolder, Queue<ImageInfo> imagesQueue, boolean force) throws IOException, NoSuchElementException {
+    private void scrapeBookText(String bookId, String url, WebDriver driver, File contentFolder, Queue<FileDownloadInfo> imagesQueue, boolean force) throws IOException, NoSuchElementException {
         // Create the book folder if it doesn't exist.
         final File bookFolder = new File(contentFolder, bookId);
         if (!bookFolder.exists() && !bookFolder.mkdirs()) {
@@ -238,7 +234,7 @@ public class AmazonPreview extends SiteScraper {
         return null;
     }
 
-    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, File textFile, Queue<ImageInfo> imagesQueue) throws IOException {
+    private void writeBookText(WebDriver driver, WebElement rootElement, File bookFolder, File textFile, Queue<FileDownloadInfo> imagesQueue) throws IOException {
         // Create the book text file.
         if (!textFile.createNewFile()) {
             getLogger().log(Level.SEVERE, "Unable to create book text file for `" + bookFolder.getName() + "`.");
@@ -253,7 +249,7 @@ public class AmazonPreview extends SiteScraper {
         out.close();
     }
 
-    private void writeElementText(WebDriver driver, WebElement element, File bookFolder, PrintStream out, Queue<ImageInfo> imagesQueue) {
+    private void writeElementText(WebDriver driver, WebElement element, File bookFolder, PrintStream out, Queue<FileDownloadInfo> imagesQueue) {
         // Search recursively for matching children.
         final List<WebElement> children = element.findElements(By.xpath("./*"));
         if (children.size() == 0 || areAllFormatting(children)) {
@@ -275,7 +271,7 @@ public class AmazonPreview extends SiteScraper {
             // Check for and download any images within image (`img`) tags.
             final String[] imageUrls = getImageUrls(html);
             for (String url : imageUrls) {
-                imagesQueue.offer(new ImageInfo(url, bookFolder));
+                imagesQueue.offer(new FileDownloadInfo(url, bookFolder));
             }
             // On every relevant LEAF-ELEMENT, check for a `background-image` CSS attribute.
             final String backgroundImageValue = element.getCssValue("background-image");
@@ -286,7 +282,7 @@ public class AmazonPreview extends SiteScraper {
                 } else {
                     url = backgroundImageValue.trim();
                 }
-                imagesQueue.offer(new ImageInfo(url, bookFolder));
+                imagesQueue.offer(new FileDownloadInfo(url, bookFolder));
             }
             // Convert HTML to human-readable text.
             final String text = html
@@ -370,206 +366,5 @@ public class AmazonPreview extends SiteScraper {
                 .results()
                 .map(matchResult -> matchResult.group(1))
                 .toArray(String[]::new);
-    }
-
-    private static class ImageInfo {
-        final String url;
-        final File bookFolder;
-
-        ImageInfo(String url, File bookFolder) {
-            this.url = url;
-            this.bookFolder = bookFolder;
-        }
-    }
-
-    private void downloadImages(OkHttpClient client, Queue<ImageInfo> imagesQueue, boolean force) {
-        getLogger().log(Level.INFO, "Downloading images...");
-        while (isScrapingBooks.get() || !imagesQueue.isEmpty()) {
-            // Wait for image queue to fill.
-            if (imagesQueue.isEmpty()) {
-                try {
-                    Thread.sleep(10000L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-                continue;
-            }
-            // Download the image.
-            final ImageInfo imageInfo = imagesQueue.poll();
-            // Check for an existing file with the same name, optionally with a file extension.
-            final String imageFileNameCandidate = getImageFileName(imageInfo.url);
-            final File imageFile;
-            final File similarImageFile = findSimilarFile(imageInfo.bookFolder, imageFileNameCandidate);
-            imageFile = Objects.requireNonNullElseGet(similarImageFile, () -> new File(imageInfo.bookFolder, imageFileNameCandidate));
-            // Process `force` flag.
-            if (imageFile.exists()) {
-                if (force) {
-                    if (!imageFile.delete()) {
-                        getLogger().log(Level.SEVERE, "Unable to delete image file `" + imageFile.getPath() + "`.");
-                        continue;
-                    }
-                } else {
-                    continue;
-                }
-            }
-            int retries = 3;
-            while (retries > 0) {
-                try {
-                    downloadImage(client, imageInfo, imageFile, getLogger());
-                    break;
-                } catch (IOException e) {
-                    getLogger().log(Level.WARNING, "Encountered IOException while downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", e);
-                } catch (Throwable t) {
-                    getLogger().log(Level.WARNING, "Encountered unknown error while downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", t);
-                }
-                retries--;
-            }
-        }
-        getLogger().log(Level.INFO, "Finished downloading images.");
-    }
-
-    private static void downloadImage(OkHttpClient client, ImageInfo imageInfo, File imageFile, Logger logger) throws IOException {
-        logOrPrint("Downloading image `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.INFO);
-        final Request request = new Request.Builder()
-                .url(imageInfo.url)
-                .build();
-        final Call call = client.newCall(request);
-        final Response response = call.execute();
-        if (response.body() == null) {
-            logOrPrint("Failed to retrieve response from `" + imageInfo.url + "` for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
-            return;
-        }
-        final InputStream byteStream = response.body().byteStream();
-        final File newImageFile;
-        if (imageFile.getName().contains(".")) {
-            // The file already has a proper extension.
-            newImageFile = imageFile;
-        } else {
-            // Look for a known `Content-Type` in the response header.
-            final String contentType = response.header("Content-Type");
-            if ("image/jpeg".equalsIgnoreCase(contentType)) {
-                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpg");
-            } else if ("image/png".equalsIgnoreCase(contentType)) {
-                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".png");
-            } else if ("image/gif".equalsIgnoreCase(contentType)) {
-                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".gif");
-            } else if ("image/svg+xml".equalsIgnoreCase(contentType)) {
-                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".svg");
-            } else if ("image/bmp".equalsIgnoreCase(contentType)) {
-                newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".bmp");
-            } else {
-                if (contentType != null) {
-                    logOrPrint("Found unknown Content-Type `" + contentType + "` while downloading image for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
-                }
-                // "Sniff" the first few bytes of the file contents.
-                // See `https://tools.ietf.org/id/draft-abarth-mime-sniff-06.html#rfc.section.6`.
-                final byte[] bytes = new byte[8];
-                if (byteStream.read(bytes) == bytes.length) {
-                    // Two's complement: A Java `byte` is shifted 1 place to the right from its
-                    // unsigned hexadecimal pattern in order to represent negative values.
-                    if (bytes[0] == (0xFF >> 1) && bytes[1] == (0xD8 >> 1) && bytes[2] == (0xFF >> 1)) {
-                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".jpg");
-                    } else if (bytes[0] == (0x89 >> 1) && bytes[1] == (0x50 >> 1) && bytes[2] == (0x4E >> 1) && bytes[3] == (0x47 >> 1) &&
-                            bytes[4] == (0x0D >> 1) && bytes[5] == (0x0A >> 1) && bytes[6] == (0x1A >> 1) && bytes[7] == (0x0A >> 1)) {
-                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".png");
-                    } else if (bytes[0] == (0x47 >> 1) && bytes[1] == (0x49 >> 1) && bytes[2] == (0x46 >> 1) && bytes[3] == (0x38 >> 1) &&
-                            (bytes[4] == (0x37 >> 1) || bytes[4] == (0x39 >> 1)) &&
-                            bytes[5] == (0x61 >> 1)) {
-                        // 'GIF87a' or 'GIF89a'.
-                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".gif");
-                    } else if (bytes[0] == (0x42 >> 1) && bytes[1] == (0x4D >> 1)) {
-                        // 'BM'.
-                        newImageFile = new File(imageInfo.bookFolder, imageFile.getName() + ".bmp");
-                    } else {
-                        // No luck.
-                        final StringBuilder bytePattern = new StringBuilder();
-                        for (byte b : bytes) {
-                            if (bytePattern.length() != 0) {
-                                bytePattern.append(" ");
-                            }
-                            bytePattern.append(String.format("%02X", b));
-                        }
-                        logOrPrint("Found unknown bit pattern `" + bytePattern + "` in image file without file extension for book `" + imageInfo.bookFolder.getName() + "`.", logger, Level.WARNING);
-                        newImageFile = imageFile;
-                    }
-                } else {
-                    newImageFile = imageFile;
-                }
-            }
-        }
-        Files.copy(byteStream, newImageFile.toPath());
-    }
-
-    private static String getImageFileName(String url) {
-        // Chop off parameters, if they exist.
-        final int parametersIndex = url.lastIndexOf("?");
-        final String parameters;
-        if (parametersIndex != -1) {
-            parameters = url.substring(parametersIndex + 1);
-            url = url.substring(0, parametersIndex);
-        } else {
-            parameters = null;
-        }
-        // Check for a file extension.
-        String extension = null;
-        if (url.endsWith(".jpeg") || url.endsWith(".jpg")) {
-            extension = ".jpg";
-        } else if (url.endsWith(".png")) {
-            extension = ".png";
-        } else if (url.endsWith(".gif")) {
-            extension = ".gif";
-        } else if (url.endsWith(".svg")) {
-            extension = ".svg";
-        } else if (url.endsWith(".bmp")) {
-            // See cover image of Kindle preview of `https://www.amazon.com/dp/B000FBJAJ6`.
-            extension = ".bmp";
-        }
-        if (extension != null) {
-            // Chop off the extension. It will be added later.
-            url = url.substring(0, url.length() - extension.length());
-        } else if (parameters != null) {
-            // When no extension exists, check the parameters for a MIME type.
-            if (parameters.contains("mime=image/jpeg") || parameters.contains("mime=image/jpg")) {
-                extension = ".jpg";
-            } else if (parameters.contains("mime=image/png")) {
-                extension = ".png";
-            } else if (parameters.contains("mime=image/gif")) {
-                extension = ".gif";
-            } else if (parameters.contains("mime=image/svg+xml")) {
-                extension = ".svg";
-            } else if (parameters.contains("mime=image/bmp")) {
-                extension = ".bmp";
-            }
-        }
-        // Replace illegal characters.
-        url = url.replaceAll("[:/\\\\.$<>]+", "_");
-        // Add the extension, if it exists.
-        if (extension != null) {
-            url = url + extension;
-        }
-        return url.trim();
-    }
-
-    private static File findSimilarFile(File bookFolder, String candidateName) {
-        final File[] files = bookFolder.listFiles();
-        if (files != null) {
-            for (File file : files) {
-                final String fileName = file.getName();
-                if (fileName.startsWith(candidateName)) {
-                    return file;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static void logOrPrint(String msg, Logger logger, Level level) {
-        if (logger != null) {
-            logger.log(level, msg);
-        } else if (level == Level.SEVERE || level == Level.WARNING) {
-            System.err.println(msg);
-        } else {
-            System.out.println(msg);
-        }
     }
 }
