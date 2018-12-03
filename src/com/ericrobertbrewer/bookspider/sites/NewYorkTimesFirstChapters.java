@@ -66,7 +66,7 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
         getLogger().log(Level.INFO, "Scraping New York Times first chapters.");
-        final WebDriver driver = factory.newChromeDriver();
+        final WebDriver driver = factory.newInstance();
         // Set timeout for obsolete API call (to
         // `http://barnesandnoble.bfast.com/booklink/serve?sourceid=4773&categoryid=nytsearch`).
         driver.manage().timeouts().setScriptTimeout(1000L, TimeUnit.MILLISECONDS);

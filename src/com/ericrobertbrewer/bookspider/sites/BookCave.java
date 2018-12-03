@@ -79,7 +79,7 @@ public class BookCave extends SiteScraper {
         // Populate the frontier.
         final Thread frontierThread = new Thread(() -> {
             isExploringFrontier.set(true);
-            final WebDriver frontierDriver = factory.newChromeDriver();
+            final WebDriver frontierDriver = factory.newInstance();
             try {
                 exploreFrontier(frontierDriver, frontier, frontierOut);
             } catch (Throwable t) {
@@ -97,7 +97,7 @@ public class BookCave extends SiteScraper {
         // Create a separate thread to scrape books.
         final Thread scrapeThread = new Thread(() -> {
             isScrapingBooks.set(true);
-            final WebDriver scrapeDriver = factory.newChromeDriver();
+            final WebDriver scrapeDriver = factory.newInstance();
             databaseHelper.connect(contentFolder.getPath() + Folders.SLASH + "contents.db");
             try {
                 scrapeBooks(scrapeDriver, frontier, databaseHelper);

@@ -1,5 +1,6 @@
 package com.ericrobertbrewer.bookspider;
 
+import com.ericrobertbrewer.web.ChromeDriverFactory;
 import com.ericrobertbrewer.web.WebDriverFactory;
 
 import java.io.File;
@@ -20,9 +21,9 @@ public class Launcher {
             throw new IllegalArgumentException("Usage: <driver-path> [force]");
         }
         // Create web driver factory.
-        final WebDriverFactory factory = new WebDriverFactory();
         final String driverPath = args[0];
-        factory.enableChromeDriver(driverPath);
+        ChromeDriverFactory.setDriverPath(driverPath);
+        final WebDriverFactory factory = new ChromeDriverFactory();
         // Check `force` flag.
         final boolean force;
         if (args.length > 1) {

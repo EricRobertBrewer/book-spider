@@ -36,7 +36,7 @@ public class AmazonPreview extends SiteScraper {
         final FileDownloader fileDownloader = new FileDownloader();
         // Create scraping thread.
         final Thread scrapeThread = new Thread(() -> {
-            final WebDriver driver = factory.newChromeDriver();
+            final WebDriver driver = factory.newInstance();
             isScrapingBooks.set(true);
             scrapeBookTexts(driver, contentFolder, imagesQueue, force);
             driver.quit();

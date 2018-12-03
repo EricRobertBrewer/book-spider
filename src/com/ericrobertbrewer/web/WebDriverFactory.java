@@ -1,17 +1,8 @@
 package com.ericrobertbrewer.web;
 
-import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.WebDriver;
 
-public class WebDriverFactory {
+public interface WebDriverFactory {
 
-    public WebDriverFactory() {
-    }
-
-    public void enableChromeDriver(String driverPath) {
-        System.setProperty("webdriver.chrome.driver", driverPath);
-    }
-
-    public ChromeDriver newChromeDriver() {
-        return new ChromeDriver();
-    }
+    WebDriver newInstance();
 }
