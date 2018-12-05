@@ -1,11 +1,15 @@
-package com.ericrobertbrewer.bookspider.sites;
+package com.ericrobertbrewer.bookspider.sites.meta;
 
 import com.ericrobertbrewer.bookspider.AbstractDatabaseHelper;
+import com.ericrobertbrewer.bookspider.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
-import com.ericrobertbrewer.bookspider.SiteScraper;
+import com.ericrobertbrewer.bookspider.sites.SiteScraper;
+import com.ericrobertbrewer.bookspider.sites.text.AmazonKindle;
+import com.ericrobertbrewer.bookspider.sites.text.AmazonPreview;
 import com.ericrobertbrewer.web.DriverUtils;
 import com.ericrobertbrewer.web.WebDriverFactory;
+import com.ericrobertbrewer.web.WebUtils;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
@@ -49,7 +53,7 @@ public class BookCave extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, final Launcher.Callback callback) {
+    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, final Launcher.Callback callback) {
         if (force) {
             throw new IllegalArgumentException("BookCave does not support `force`=`true`.");
         }
@@ -168,7 +172,7 @@ public class BookCave extends SiteScraper {
             try {
                 final WebElement bookDetailsA = ratedBookDiv.findElement(By.className("book-details"));
                 final String url = bookDetailsA.getAttribute("href");
-                final String bookId = getLastUrlComponent(url);
+                final String bookId = WebUtils.getLastUrlComponent(url);
                 if (!frontierSet.contains(bookId)) {
                     frontier.add(bookId);
                     frontierOut.println(bookId);
@@ -719,6 +723,49 @@ public class BookCave extends SiteScraper {
         }
     }
 
+    private static List<Book> getAllBooks(Logger logger) {
+        // Get list of book names with IDs from database.
+        final String databaseFileName;
+        try {
+            databaseFileName = Folders.getContentFolder(Folders.ID_BOOKCAVE) + Folders.SLASH + "contents.db";
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to get database folder name.", e);
+        }
+        final DatabaseHelper databaseHelper = new DatabaseHelper(logger);
+        databaseHelper.connect(databaseFileName);
+        final List<Book> books;
+        try {
+            books = databaseHelper.getBooks();
+        } catch (SQLException e) {
+            throw new RuntimeException("Unable to retrieve books.", e);
+        }
+        databaseHelper.close();
+        return books;
+    }
+
+    private static List<BookScrapeInfo> getBookScrapeInfos(List<Book> books) {
+        final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
+        for (Book book : books) {
+            // Skip unattainable books.
+            if (book.amazonKindleUrl == null && book.amazonPrintUrl == null) {
+                continue;
+            }
+            final String[] urls;
+            if (book.amazonKindleUrl == null) {
+                urls = new String[]{book.amazonPrintUrl};
+            } else if (book.amazonPrintUrl == null) {
+                urls = new String[]{book.amazonKindleUrl};
+            } else {
+                // Give multiple options for Amazon URLs.
+                // Sometimes the BookCave Kindle link will have broken, though a Kindle preview still exists.
+                // See `https://mybookcave.com/mybookratings/rated-book/the-warriors-path/`.
+                urls = new String[]{book.amazonKindleUrl, book.amazonPrintUrl};
+            }
+            bookScrapeInfos.add(new BookScrapeInfo(book.id, urls));
+        }
+        return bookScrapeInfos;
+    }
+
     @SuppressWarnings("unused")
     private static class AmazonPreviewProvider implements Provider {
 
@@ -732,48 +779,42 @@ public class BookCave extends SiteScraper {
         }
 
         @Override
-        public SiteScraper newInstance(final Logger logger) {
-            // Get list of book names with IDs from database.
-            final String databaseFileName;
-            try {
-                databaseFileName = Folders.getContentFolder(Folders.ID_BOOKCAVE) + Folders.SLASH + "contents.db";
-            } catch (IOException e) {
-                throw new RuntimeException("Unable to get database folder name.", e);
-            }
-            final DatabaseHelper databaseHelper = new DatabaseHelper(logger);
-            databaseHelper.connect(databaseFileName);
-            final List<Book> allBooks;
-            try {
-                allBooks = databaseHelper.getBooks();
-            } catch (SQLException e) {
-                throw new RuntimeException("Unable to retrieve books.", e);
-            }
-            databaseHelper.close();
-            final List<String> bookIds = new ArrayList<>();
-            final List<String[]> bookUrls = new ArrayList<>();
-            for (Book book : allBooks) {
-                // Skip unattainable books.
-                if (book.amazonKindleUrl == null && book.amazonPrintUrl == null) {
-                    continue;
-                }
-                bookIds.add(book.id);
-                if (book.amazonKindleUrl == null) {
-                    bookUrls.add(new String[]{book.amazonPrintUrl});
-                } else if (book.amazonPrintUrl == null) {
-                    bookUrls.add(new String[]{book.amazonKindleUrl});
-                } else {
-                    // Give multiple options for Amazon URLs.
-                    // Sometimes the BookCave Kindle link will have broken, though a Kindle preview still exists.
-                    // See `https://mybookcave.com/mybookratings/rated-book/the-warriors-path/`.
-                    bookUrls.add(new String[]{book.amazonKindleUrl, book.amazonPrintUrl});
-                }
-            }
-            return new AmazonPreview(logger, bookIds, bookUrls);
+        public SiteScraper newInstance(Logger logger) {
+            final List<Book> allBooks = getAllBooks(logger);
+            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
+            return new AmazonPreview(logger, bookScrapeInfos);
         }
 
         @Override
         public String getId() {
             return Folders.ID_BOOKCAVE_AMAZON_PREVIEW;
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static class AmazonKindleProvider implements Provider {
+
+        public static void main(String[] args) throws IOException {
+            Launcher.launch(args, new AmazonKindleProvider());
+        }
+
+        @Override
+        public Class<? extends SiteScraper> getScraperClass() {
+            return AmazonKindle.class;
+        }
+
+        @Override
+        public SiteScraper newInstance(Logger logger) {
+            final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
+            bookScrapeInfos.add(new BookScrapeInfo("loving-a-toymaker", new String[]{"https://www.amazon.com/dp/B07JFX5MLK"}));
+//            final List<Book> allBooks = getAllBooks(logger);
+//            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
+            return new AmazonKindle(logger, bookScrapeInfos);
+        }
+
+        @Override
+        public String getId() {
+            return Folders.ID_BOOKCAVE_AMAZON_KINDLE;
         }
     }
 }

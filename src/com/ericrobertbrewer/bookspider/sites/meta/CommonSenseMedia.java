@@ -1,11 +1,12 @@
-package com.ericrobertbrewer.bookspider.sites;
+package com.ericrobertbrewer.bookspider.sites.meta;
 
 import com.ericrobertbrewer.bookspider.AbstractDatabaseHelper;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
-import com.ericrobertbrewer.bookspider.SiteScraper;
+import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.web.DriverUtils;
 import com.ericrobertbrewer.web.WebDriverFactory;
+import com.ericrobertbrewer.web.WebUtils;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
@@ -54,7 +55,7 @@ public class CommonSenseMedia extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, final Launcher.Callback callback) {
+    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, final Launcher.Callback callback) {
         if (force) {
             throw new IllegalArgumentException("CommonSenseMedia does not support `force`=`true`.");
         }
@@ -165,7 +166,7 @@ public class CommonSenseMedia extends SiteScraper {
             try {
                 final WebElement csmButtonA = viewsRow.findElement(By.className("csm-button"));
                 final String url = csmButtonA.getAttribute("href");
-                final String bookId = getLastUrlComponent(url);
+                final String bookId = WebUtils.getLastUrlComponent(url);
                 if (!frontierSet.contains(bookId)) {
                     frontier.add(bookId);
                     frontierOut.println(bookId);

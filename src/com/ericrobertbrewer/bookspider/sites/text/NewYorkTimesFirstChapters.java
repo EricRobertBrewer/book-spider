@@ -1,10 +1,10 @@
-package com.ericrobertbrewer.bookspider.sites;
+package com.ericrobertbrewer.bookspider.sites.text;
 
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
-import com.ericrobertbrewer.bookspider.SiteScraper;
-import com.ericrobertbrewer.web.WebDriverFactory;
+import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.web.DriverUtils;
+import com.ericrobertbrewer.web.WebDriverFactory;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -64,7 +64,7 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
+    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, Launcher.Callback callback) {
         getLogger().log(Level.INFO, "Scraping New York Times first chapters.");
         final WebDriver driver = factory.newInstance();
         // Set timeout for obsolete API call (to

@@ -20,6 +20,7 @@ public class Folders {
     private static final String LOGS_ROOT = "logs" + SLASH;
 
     public static final String ID_BOOKCAVE = "bookcave";
+    public static final String ID_BOOKCAVE_AMAZON_KINDLE = "bookcave_amazon_kindle";
     public static final String ID_BOOKCAVE_AMAZON_PREVIEW = "bookcave_amazon_preview";
     public static final String ID_COMMONSENSEMEDIA = "commonsensemedia";
     public static final String ID_NYTIMES = "nytimes";
@@ -38,7 +39,7 @@ public class Folders {
 
     private static final DateFormat LOG_DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
 
-    public static File getLogsFolder(String id) throws IOException {
+    private static File getLogsFolder(String id) throws IOException {
         final File folder = new File(LOGS_ROOT + id + SLASH);
         if (!folder.exists() && !folder.mkdirs()) {
             throw new IOException("Unable to create logs folder: `" + folder.getPath() + "`.");

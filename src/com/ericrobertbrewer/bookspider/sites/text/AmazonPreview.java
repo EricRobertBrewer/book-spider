@@ -1,9 +1,10 @@
-package com.ericrobertbrewer.bookspider.sites;
+package com.ericrobertbrewer.bookspider.sites.text;
 
+import com.ericrobertbrewer.bookspider.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Launcher;
-import com.ericrobertbrewer.bookspider.SiteScraper;
-import com.ericrobertbrewer.web.FileDownloadInfo;
-import com.ericrobertbrewer.web.FileDownloader;
+import com.ericrobertbrewer.bookspider.sites.SiteScraper;
+import com.ericrobertbrewer.web.dl.FileDownloadInfo;
+import com.ericrobertbrewer.web.dl.FileDownloader;
 import com.ericrobertbrewer.web.WebDriverFactory;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
@@ -19,19 +20,17 @@ import java.util.regex.Pattern;
 
 public class AmazonPreview extends SiteScraper {
 
-    private final List<String> bookIds;
-    private final List<String[]> bookUrls;
+    private final List<BookScrapeInfo> bookScrapeInfos;
 
     private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
 
-    AmazonPreview(Logger logger, List<String> bookIds, List<String[]> bookUrls) {
+    public AmazonPreview(Logger logger, List<BookScrapeInfo> bookScrapeInfos) {
         super(logger);
-        this.bookIds = bookIds;
-        this.bookUrls = bookUrls;
+        this.bookScrapeInfos = bookScrapeInfos;
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, Launcher.Callback callback) {
+    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, Launcher.Callback callback) {
         final Queue<FileDownloadInfo> imagesQueue = new LinkedList<>();
         final FileDownloader fileDownloader = new FileDownloader();
         // Create scraping thread.
@@ -65,24 +64,24 @@ public class AmazonPreview extends SiteScraper {
     }
 
     private void scrapeBookTexts(WebDriver driver, File contentFolder, Queue<FileDownloadInfo> imagesQueue, boolean force) {
-        for (int i = 0; i < bookIds.size(); i++) {
-            final String bookId = bookIds.get(i);
-            final String[] urls = bookUrls.get(i);
+        for (BookScrapeInfo bookScrapeInfo : bookScrapeInfos) {
             boolean success = false;
-            for (int j = 0; j < urls.length && !success; j++) {
-                final String url = urls[j];
+            for (String url : bookScrapeInfo.urls) {
+                if (success) {
+                    break;
+                }
                 int retries = 3;
                 while (retries > 0) {
                     try {
-                        scrapeBookText(bookId, url, driver, contentFolder, imagesQueue, force);
+                        scrapeBookText(bookScrapeInfo.id, url, driver, contentFolder, imagesQueue, force);
                         success = true;
                         break;
                     } catch (IOException e) {
-                        getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookId + "`.", e);
+                        getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookScrapeInfo.id + "`.", e);
                     } catch (NoSuchElementException e) {
-                        getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookId + "`.", e);
+                        getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
                     } catch (Throwable t) {
-                        getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + bookId + "`.", t);
+                        getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + bookScrapeInfo.id + "`.", t);
                     }
                     retries--;
                 }
