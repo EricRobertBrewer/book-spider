@@ -3,6 +3,7 @@ package com.ericrobertbrewer.bookspider.sites.text;
 import com.ericrobertbrewer.bookspider.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
+import com.ericrobertbrewer.web.DriverUtils;
 import com.ericrobertbrewer.web.WebDriverFactory;
 import com.ericrobertbrewer.web.WebUtils;
 import org.openqa.selenium.*;
@@ -99,18 +100,76 @@ public class AmazonKindle extends SiteScraper {
         // Navigate to the Amazon store page.
         getLogger().log(Level.INFO, "Scraping text for book `" + bookId + "`.");
         driver.navigate().to(url);
-        // TODO: Check if the book is available through Kindle Unlimited. If so, click 'Read for Free'.
-        // TODO: Check if the book is free. If so, "purchase" it.
-        // Navigate to the Amazon Kindle page.
-        // TODO: Check if the book has already been acquired through Kindle Unlimited. If so, click 'Read Now'.
-        final WebElement readNowSpan = driver.findElement(By.id("dbs-goto-bookstore-rw"));
-        readNowSpan.click();
+        final String asin = WebUtils.getLastUrlComponent(driver.getCurrentUrl());
+        final WebElement aPage = driver.findElement(By.id("a-page"));
+        final WebElement dpDiv = aPage.findElement(By.id("dp"));
+        final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
+        // Navigate to this book's Amazon Kindle Cloud Reader page.
+        final String readerUrl = "https://read.amazon.com/";
+        // For example: `https://read.amazon.com/?asin=B07JK9Z14K`.
         try {
-            Thread.sleep(7500L);
-        } catch (InterruptedException ignored) {
+            // Check if the book has already been acquired through Kindle Unlimited.
+            final WebElement readNowSpan = dpContainerDiv.findElement(By.id("dbs-goto-bookstore-rw"));
+//            readNowSpan.click();
+            getLogger().log(Level.INFO, "Book already borrowed through Amazon Kindle. Navigating...");
+            driver.navigate().to(readerUrl + "?asin=" + asin);
+        } catch (NoSuchElementException e) {
+            try {
+                // Check if the book is available through Kindle Unlimited. If so, click 'Read for Free'.
+                final WebElement borrowButton = dpContainerDiv.findElement(By.id("borrow-button"));
+                getLogger().log(Level.INFO, "Borrowing book through Amazon Kindle. Clicking...");
+                borrowButton.click();
+                DriverUtils.sleep(5000L);
+                final WebElement readNowSpan = driver.findElement(By.id("dbs-readnow-bookstore-rw"));
+//                readNowSpan.click();
+                getLogger().log(Level.INFO, "Book successfully borrowed. Navigating...");
+                driver.navigate().to(readerUrl + "?asin=" + asin);
+            } catch (NoSuchElementException e1) {
+                // TODO: Fix below; check the price, etc.
+                if (true) {
+                    return;
+                }
+                // Check if the book is free. If so, "purchase" it.
+                final WebElement mediaMatrixDiv = dpContainerDiv.findElement(By.id("MediaMatrix"));
+                final WebElement appsPopOverA = mediaMatrixDiv.findElement(By.id("kcpAppsPopOver"));
+                appsPopOverA.click();
+                DriverUtils.sleep(1000L);
+                final WebElement appsPopOverDialogDiv = driver.findElement(By.id("kcpAppsPopOverDialog_"));
+                final WebElement appsPopOverDialogTable = appsPopOverDialogDiv.findElement(By.tagName("table"));
+                findCloudReaderHeader:
+                for (WebElement tr : appsPopOverDialogTable.findElements(By.tagName("tr"))) {
+                    for (WebElement td : tr.findElements(By.tagName("td"))) {
+                        try {
+                            final WebElement appWidgetHeaderSpan = td.findElement(By.className("kcpAppWidgetHeader"));
+                            if ("Kindle Cloud Reader".equals(appWidgetHeaderSpan.getText().trim())) {
+                                final List<WebElement> as = td.findElements(By.tagName("a"));
+                                if (as.size() > 0) {
+//                                    as.get(0).click();
+                                    getLogger().log(Level.INFO, "Free book purchased. Navigating...");
+                                    driver.navigate().to(readerUrl + "?asin=" + asin);
+                                    break findCloudReaderHeader;
+                                }
+                            }
+                        } catch (NoSuchElementException ignored) {
+                        }
+                    }
+                }
+            }
         }
+        DriverUtils.sleep(9999L);
         // Enter the first `iframe`.
-        final WebElement kindleReaderFrame = driver.findElement(By.id("KindleReaderIFrame"));
+        WebElement kindleReaderFrame = null;
+        int retries = 3;
+        while (retries > 0 && kindleReaderFrame == null) {
+            try {
+                kindleReaderFrame = driver.findElement(By.id("KindleReaderIFrame"));
+            } catch (NoSuchElementException ignored) {
+            }
+            retries--;
+        }
+        if (kindleReaderFrame == null) {
+            throw new RuntimeException("Unable to find KindleReaderIFrame in document.");
+        }
         final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
         // Close the 'Sync Position' dialog, if it's open.
         try {
@@ -118,10 +177,7 @@ public class AmazonKindle extends SiteScraper {
             // Click 'Make This the Furthest Read Location'.
             final WebElement resetButton = syncPositionDiv.findElement(By.id("kindleReader_dialog_syncPosition_reset_btn"));
             resetButton.click();
-            try {
-                Thread.sleep(1000L);
-            } catch (InterruptedException ignored) {
-            }
+            DriverUtils.sleep(1000L);
         } catch (WebDriverException ignored) {
         }
         // Find the main container.
@@ -206,7 +262,6 @@ public class AmazonKindle extends SiteScraper {
         if (visibleText.isEmpty()) {
             return;
         }
-        getLogger().log(Level.INFO, "Found visible text in <" + tag + "> element with id=\"" + element.getAttribute("id") + "\": `" + visibleText + "`.");
         text.put(id, visibleText);
     }
 

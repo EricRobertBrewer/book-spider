@@ -805,10 +805,8 @@ public class BookCave extends SiteScraper {
 
         @Override
         public SiteScraper newInstance(Logger logger) {
-            final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
-            bookScrapeInfos.add(new BookScrapeInfo("loving-a-toymaker", new String[]{"https://www.amazon.com/dp/B07JFX5MLK"}));
-//            final List<Book> allBooks = getAllBooks(logger);
-//            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
+            final List<Book> allBooks = getAllBooks(logger);
+            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
             return new AmazonKindle(logger, bookScrapeInfos);
         }
 
