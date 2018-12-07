@@ -34,6 +34,7 @@ public class AmazonKindle extends SiteScraper {
         if (otherArgs.length < 2 || otherArgs.length > 3) {
             throw new IllegalArgumentException("Usage: <email> <password> [threads]");
         }
+        // Collect arguments.
         final String email = otherArgs[0];
         final String password = otherArgs[1];
         final int threads;
@@ -42,7 +43,9 @@ public class AmazonKindle extends SiteScraper {
         } else {
             threads = 4;
         }
+        // Create thread-safe queue.
         final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
+        // Start scraping.
         scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, force, callback);
     }
 
@@ -90,13 +93,17 @@ public class AmazonKindle extends SiteScraper {
     private void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, boolean force) {
         while (!queue.isEmpty()) {
             final BookScrapeInfo bookScrapeInfo = queue.poll();
-            scrape:
+            boolean success = false;
             for (String url : bookScrapeInfo.urls) {
+                if (success) {
+                    break;
+                }
                 int retries = 3;
                 while (retries > 0) {
                     try {
                         scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, email, password, force);
-                        break scrape;
+                        success = true;
+                        break;
                     } catch (IOException e) {
                         getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookScrapeInfo.id + "`.", e);
                     } catch (NoSuchElementException e) {
@@ -345,7 +352,7 @@ public class AmazonKindle extends SiteScraper {
         if (imageFile.exists()) {
             return;
         }
-        // Ensure that the `src` attribute is a data URI:
+        // Ensure that the `src` attribute is a data URI.
         // See `https://en.wikipedia.org/wiki/Data_URI_scheme#Syntax`.
         if (!src.startsWith("data:")) {
             return;
