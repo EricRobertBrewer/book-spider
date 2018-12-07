@@ -14,12 +14,15 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class AmazonKindle extends SiteScraper {
 
     private final List<BookScrapeInfo> bookScrapeInfos;
+    private final AtomicInteger scrapeThreadsRunning = new AtomicInteger(0);
 
     public AmazonKindle(Logger logger, List<BookScrapeInfo> bookScrapeInfos) {
         super(logger);
@@ -28,42 +31,71 @@ public class AmazonKindle extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, Launcher.Callback callback) {
-        if (otherArgs.length < 2) {
-            throw new IllegalArgumentException("Usage: <email> <password>");
+        if (otherArgs.length < 2 || otherArgs.length > 3) {
+            throw new IllegalArgumentException("Usage: <email> <password> [threads]");
         }
-        final WebDriver driver = factory.newInstance();
-        // Navigate to sign in page.
         final String email = otherArgs[0];
         final String password = otherArgs[1];
+        final int threads;
+        if (otherArgs.length > 2) {
+            threads = Integer.parseInt(otherArgs[2]);
+        } else {
+            threads = 4;
+        }
+        final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
+        scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, force, callback);
+    }
+
+    private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue, int threads, WebDriverFactory factory, File contentFolder, String email, String password, boolean force, Launcher.Callback callback) {
+        for (int i = 0; i < threads; i++) {
+            final Thread scrapeThread = new Thread(() -> {
+                final WebDriver driver = factory.newInstance();
+                // Ensure that only one column is shown in the Kindle reader.
+                driver.manage().window().setSize(new Dimension(719, 978));
+                signIn(driver, email, password);
+                // Start scraping.
+                scrapeThreadsRunning.incrementAndGet();
+                scrapeBooks(queue, driver, contentFolder, email, password, force);
+                driver.quit();
+                // Finish.
+                if (scrapeThreadsRunning.decrementAndGet() == 0) {
+                    callback.onComplete();
+                }
+            });
+            scrapeThread.start();
+        }
+    }
+
+    private void signIn(WebDriver driver, String email, String password) {
+        // Navigate to sign in page.
         driver.navigate().to("https://www.amazon.com");
         final WebElement signInA = driver.findElement(By.id("nav-link-accountList"));
         signInA.click();
-        // Sign in.
+        // Enter email.
         final WebElement emailInput = driver.findElement(By.id("ap_email"));
         emailInput.click();
         emailInput.sendKeys(email);
+        // Enter password.
         final WebElement passwordInput = driver.findElement(By.id("ap_password"));
         passwordInput.click();
         passwordInput.sendKeys(password);
+        // Click 'Keep me logged in' to avoid being logged out.
+        final WebElement rememberMeSpan = driver.findElement(By.className("a-checkbox-label"));
+        rememberMeSpan.click();
+        // Submit.
         final WebElement signInSubmitInput = driver.findElement(By.id("signInSubmit"));
         signInSubmitInput.click();
-        // After signing in, adjust the window size to show only one column in the Kindle reader.
-        driver.manage().window().setSize(new Dimension(719, 978));
-        // Start scraping.
-        scrapeBooks(driver, contentFolder, force);
-        driver.quit();
-        // Finish.
-        callback.onComplete();
     }
 
-    private void scrapeBooks(WebDriver driver, File contentFolder, boolean force) {
-        for (BookScrapeInfo bookScrapeInfo : bookScrapeInfos) {
+    private void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, boolean force) {
+        while (!queue.isEmpty()) {
+            final BookScrapeInfo bookScrapeInfo = queue.poll();
             scrape:
             for (String url : bookScrapeInfo.urls) {
                 int retries = 3;
                 while (retries > 0) {
                     try {
-                        scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, force);
+                        scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, email, password, force);
                         break scrape;
                     } catch (IOException e) {
                         getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookScrapeInfo.id + "`.", e);
@@ -78,7 +110,7 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private void scrapeBook(String bookId, String url, WebDriver driver, File contentFolder, boolean force) throws IOException {
+    private void scrapeBook(String bookId, String url, WebDriver driver, File contentFolder, String email, String password, boolean force) throws IOException {
         // Create the book folder if it doesn't exist.
         final File bookFolder = new File(contentFolder, bookId);
         if (!bookFolder.exists() && !bookFolder.mkdirs()) {
@@ -101,60 +133,34 @@ public class AmazonKindle extends SiteScraper {
         getLogger().log(Level.INFO, "Scraping text for book `" + bookId + "`.");
         driver.navigate().to(url);
         final String asin = WebUtils.getLastUrlComponent(driver.getCurrentUrl());
-        final WebElement aPage = driver.findElement(By.id("a-page"));
-        final WebElement dpDiv = aPage.findElement(By.id("dp"));
+        final WebElement aPageDiv;
+        try {
+            aPageDiv = driver.findElement(By.id("a-page"));
+        } catch (NoSuchElementException e) {
+            throw new NoSuchElementException("The Amazon page for book `" + bookId + "` may no longer exist. Retrying.");
+        }
+        final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
         final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
+        // Get this book's title.
+        final WebElement booksTitleDiv = dpContainerDiv.findElement(By.id("booksTitle"));
+        final WebElement ebooksProductTItle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
+        final String title = ebooksProductTItle.getText().trim();
         // Navigate to this book's Amazon Kindle Cloud Reader page.
         final String readerUrl = "https://read.amazon.com/";
         // For example: `https://read.amazon.com/?asin=B07JK9Z14K`.
-        try {
-            // Check if the book has already been acquired through Kindle Unlimited.
-            final WebElement readNowSpan = dpContainerDiv.findElement(By.id("dbs-goto-bookstore-rw"));
-//            readNowSpan.click();
+        final boolean isKindleUnlimited;
+        if (isBookBorrowedThroughKindleUnlimited(dpContainerDiv)) {
             getLogger().log(Level.INFO, "Book already borrowed through Amazon Kindle. Navigating...");
             driver.navigate().to(readerUrl + "?asin=" + asin);
-        } catch (NoSuchElementException e) {
-            try {
-                // Check if the book is available through Kindle Unlimited. If so, click 'Read for Free'.
-                final WebElement borrowButton = dpContainerDiv.findElement(By.id("borrow-button"));
-                getLogger().log(Level.INFO, "Borrowing book through Amazon Kindle. Clicking...");
-                borrowButton.click();
-                DriverUtils.sleep(5000L);
-                final WebElement readNowSpan = driver.findElement(By.id("dbs-readnow-bookstore-rw"));
-//                readNowSpan.click();
-                getLogger().log(Level.INFO, "Book successfully borrowed. Navigating...");
-                driver.navigate().to(readerUrl + "?asin=" + asin);
-            } catch (NoSuchElementException e1) {
-                // TODO: Fix below; check the price, etc.
-                if (true) {
-                    return;
-                }
-                // Check if the book is free. If so, "purchase" it.
-                final WebElement mediaMatrixDiv = dpContainerDiv.findElement(By.id("MediaMatrix"));
-                final WebElement appsPopOverA = mediaMatrixDiv.findElement(By.id("kcpAppsPopOver"));
-                appsPopOverA.click();
-                DriverUtils.sleep(1000L);
-                final WebElement appsPopOverDialogDiv = driver.findElement(By.id("kcpAppsPopOverDialog_"));
-                final WebElement appsPopOverDialogTable = appsPopOverDialogDiv.findElement(By.tagName("table"));
-                findCloudReaderHeader:
-                for (WebElement tr : appsPopOverDialogTable.findElements(By.tagName("tr"))) {
-                    for (WebElement td : tr.findElements(By.tagName("td"))) {
-                        try {
-                            final WebElement appWidgetHeaderSpan = td.findElement(By.className("kcpAppWidgetHeader"));
-                            if ("Kindle Cloud Reader".equals(appWidgetHeaderSpan.getText().trim())) {
-                                final List<WebElement> as = td.findElements(By.tagName("a"));
-                                if (as.size() > 0) {
-//                                    as.get(0).click();
-                                    getLogger().log(Level.INFO, "Free book purchased. Navigating...");
-                                    driver.navigate().to(readerUrl + "?asin=" + asin);
-                                    break findCloudReaderHeader;
-                                }
-                            }
-                        } catch (NoSuchElementException ignored) {
-                        }
-                    }
-                }
-            }
+            isKindleUnlimited = true;
+        } else if (borrowBookThroughKindleUnlimited(driver, dpContainerDiv)) {
+            getLogger().log(Level.INFO, "Book successfully borrowed. Navigating...");
+            driver.navigate().to(readerUrl + "?asin=" + asin);
+            isKindleUnlimited = true;
+        } else if (isBookFree() && purchaseBook()) {
+            isKindleUnlimited = false;
+        } else {
+            isKindleUnlimited = false;
         }
         DriverUtils.sleep(9999L);
         // Enter the first `iframe`.
@@ -171,6 +177,55 @@ public class AmazonKindle extends SiteScraper {
             throw new RuntimeException("Unable to find KindleReaderIFrame in document.");
         }
         final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
+        final Map<String, String> text = new HashMap<>();
+        final Map<String, String> imgUrlToSrc = new HashMap<>();
+        collectContent(readerDriver, text, imgUrlToSrc, email, password);
+        writeBook(file, text);
+        saveImages(bookFolder, imgUrlToSrc);
+        // Return this book to avoid reaching the 10-book limit for Kindle Unlimited.
+        // Hitting the limit prevents any other books from being borrowed through KU.
+        if (isKindleUnlimited) {
+            if (returnKindleUnlimitedBook(readerDriver, title, email, password)) {
+                getLogger().log(Level.INFO, "Book `" + bookId + "` has been successfully returned through Kindle Unlimited.");
+            } else {
+                getLogger().log(Level.WARNING, "Unable to return book `" + bookId + "` through Kindle Unlimited.");
+            }
+        }
+    }
+
+    private boolean isBookBorrowedThroughKindleUnlimited(WebElement dpContainerDiv) {
+        try {
+            // Check if the book has already been acquired through Kindle Unlimited.
+            dpContainerDiv.findElement(By.id("dbs-goto-bookstore-rw"));
+            return true;
+        } catch (NoSuchElementException ignored) {
+        }
+        return false;
+    }
+
+    private boolean borrowBookThroughKindleUnlimited(WebDriver driver, WebElement dpContainerDiv) {
+        try {
+            // Check if the book is available through Kindle Unlimited. If so, click 'Read for Free'.
+            final WebElement borrowButton = dpContainerDiv.findElement(By.id("borrow-button"));
+            getLogger().log(Level.INFO, "Borrowing book through Amazon Kindle. Clicking...");
+            borrowButton.click();
+            DriverUtils.sleep(5000L);
+            driver.findElement(By.id("dbs-readnow-bookstore-rw"));
+            return true;
+        } catch (NoSuchElementException ignored) {
+        }
+        return false;
+    }
+
+    private boolean isBookFree() {
+        return false;
+    }
+
+    private boolean purchaseBook() {
+        return false;
+    }
+
+    private void collectContent(WebDriver readerDriver, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password) {
         // Close the 'Sync Position' dialog, if it's open.
         try {
             final WebElement syncPositionDiv = readerDriver.findElement(By.id("kindleReader_dialog_syncPosition"));
@@ -192,12 +247,11 @@ public class AmazonKindle extends SiteScraper {
             if (!className.contains("pageArrow")) {
                 break;
             }
+            // TODO: Try turning the page to the right; on failure, look for a sign-in prompt: `id=authportal-main-section`. Then sign in.
             pageTurnAreaLeftDiv.click();
         }
         // Turn pages right while extracting content.
         final WebElement centerDiv = bookContainerDiv.findElement(By.id("kindleReader_center"));
-        final Map<String, String> text = new HashMap<>();
-        final Map<String, String> imgUrlToSrc = new HashMap<>();
         while (true) {
             final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
             // Extract the visible text.
@@ -210,8 +264,6 @@ public class AmazonKindle extends SiteScraper {
             }
             pageTurnAreaRightDiv.click();
         }
-        writeBook(file, text);
-        saveImages(bookFolder, imgUrlToSrc);
     }
 
     private void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc) {
@@ -322,6 +374,33 @@ public class AmazonKindle extends SiteScraper {
             final FileOutputStream out = new FileOutputStream(imageFile);
             out.write(bytes);
         }
+    }
+
+    private boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
+        driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksAll/dateDsc/");
+        // TODO: Check for a sign-in prompt: `id=authportal-main-section`. Then sign in.
+        final WebElement aPageDiv = driver.findElement(By.id("a-page"));
+        final WebElement ngAppDiv = aPageDiv.findElement(By.id("ng-app"));
+        final WebElement contentTableListDiv = ngAppDiv.findElement(By.className("contentTableList_myx"));
+        final WebElement gridUl = contentTableListDiv.findElement(By.tagName("ul"));
+        final List<WebElement> contentTableListRows = gridUl.findElements(By.className("contentTableListRow_myx"));
+        for (int i = 0; i < contentTableListRows.size(); i++) {
+            final WebElement contentTableListRow = contentTableListRows.get(i);
+            final WebElement titleDiv = contentTableListRow.findElement(By.id("title" + i));
+            final String titleText = titleDiv.getText().trim();
+            if (title.equalsIgnoreCase(titleText)) {
+                final WebElement button = contentTableListRow.findElement(By.tagName("button"));
+                button.click();
+                DriverUtils.sleep(2000L);
+                final WebElement returnLoanDiv = contentTableListRow.findElement(By.id("contentAction_returnLoan_myx"));
+                returnLoanDiv.click();
+                final WebElement popoverModalDiv = driver.findElement(By.className("myx-popover-modal"));
+                final WebElement okButton = popoverModalDiv.findElement(By.id("dialogButton_ok_myx "));  // Apparently there is a space there!
+                okButton.click();
+                return true;
+            }
+        }
+        return false;
     }
 
     private static final Set<String> FORMATTING_TAGS = new HashSet<>();
