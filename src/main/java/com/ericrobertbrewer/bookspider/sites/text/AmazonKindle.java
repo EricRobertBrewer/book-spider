@@ -3,9 +3,9 @@ package com.ericrobertbrewer.bookspider.sites.text;
 import com.ericrobertbrewer.bookspider.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
-import com.ericrobertbrewer.web.DriverUtils;
-import com.ericrobertbrewer.web.WebDriverFactory;
 import com.ericrobertbrewer.web.WebUtils;
+import com.ericrobertbrewer.web.driver.DriverUtils;
+import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
@@ -30,18 +30,24 @@ public class AmazonKindle extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, Launcher.Callback callback) {
-        if (otherArgs.length < 2 || otherArgs.length > 3) {
-            throw new IllegalArgumentException("Usage: <email> <password> [threads]");
+    public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
+        if (args.length < 2 || args.length > 4) {
+            throw new IllegalArgumentException("Usage: <email> <password> [threads] [force]");
         }
         // Collect arguments.
-        final String email = otherArgs[0];
-        final String password = otherArgs[1];
+        final String email = args[0];
+        final String password = args[1];
         final int threads;
-        if (otherArgs.length > 2) {
-            threads = Integer.parseInt(otherArgs[2]);
+        if (args.length > 2) {
+            threads = Integer.parseInt(args[2]);
         } else {
             threads = 4;
+        }
+        final boolean force;
+        if (args.length > 3) {
+            force = Boolean.parseBoolean(args[3]);
+        } else {
+            force = false;
         }
         // Create thread-safe queue.
         final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
@@ -53,8 +59,7 @@ public class AmazonKindle extends SiteScraper {
         for (int i = 0; i < threads; i++) {
             final Thread scrapeThread = new Thread(() -> {
                 final WebDriver driver = factory.newInstance();
-                // Ensure that only one column is shown in the Kindle reader.
-                driver.manage().window().setSize(new Dimension(719, 978));
+                ensureReaderIsSingleColumn(driver);
                 signIn(driver, email, password);
                 // Start scraping.
                 scrapeThreadsRunning.incrementAndGet();
@@ -69,7 +74,12 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private void signIn(WebDriver driver, String email, String password) {
+    void ensureReaderIsSingleColumn(WebDriver driver) {
+        // Ensure that only one column is shown in the Kindle reader.
+        driver.manage().window().setSize(new Dimension(719, 978));
+    }
+
+    void signIn(WebDriver driver, String email, String password) {
         // Navigate to sign in page.
         driver.navigate().to("https://www.amazon.com");
         final WebElement signInA = driver.findElement(By.id("nav-link-accountList"));
@@ -139,53 +149,61 @@ public class AmazonKindle extends SiteScraper {
         // Navigate to the Amazon store page.
         getLogger().log(Level.INFO, "Scraping text for book `" + bookId + "`.");
         driver.navigate().to(url);
-        final String asin = WebUtils.getLastUrlComponent(driver.getCurrentUrl());
+        // Check whether or not this book is (still) available on Amazon.
         final WebElement aPageDiv;
         try {
             aPageDiv = driver.findElement(By.id("a-page"));
         } catch (NoSuchElementException e) {
             throw new NoSuchElementException("The Amazon page for book `" + bookId + "` may no longer exist. Retrying.");
         }
+        // Get this book's Amazon ID.
+        final String asin = WebUtils.getLastUrlComponent(driver.getCurrentUrl());
+        // Find the main container.
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
         final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
-        // Get this book's title.
-        final WebElement booksTitleDiv = dpContainerDiv.findElement(By.id("booksTitle"));
-        final WebElement ebooksProductTItle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
-        final String title = ebooksProductTItle.getText().trim();
+        // Get this book's title. This may be used to return a book borrowed through Kindle Unlimited.
+        final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
+        final WebElement booksTitleDiv = centerColDiv.findElement(By.id("booksTitle"));
+        final WebElement ebooksProductTitle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
+        final String title = ebooksProductTitle.getText().trim();
         // Navigate to this book's Amazon Kindle Cloud Reader page.
         final String readerUrl = "https://read.amazon.com/";
         // For example: `https://read.amazon.com/?asin=B07JK9Z14K`.
         final boolean isKindleUnlimited;
         if (isBookBorrowedThroughKindleUnlimited(dpContainerDiv)) {
-            getLogger().log(Level.INFO, "Book already borrowed through Amazon Kindle. Navigating...");
-            driver.navigate().to(readerUrl + "?asin=" + asin);
+            getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Amazon Kindle. Navigating...");
             isKindleUnlimited = true;
         } else if (borrowBookThroughKindleUnlimited(driver, dpContainerDiv)) {
-            getLogger().log(Level.INFO, "Book successfully borrowed. Navigating...");
-            driver.navigate().to(readerUrl + "?asin=" + asin);
+            getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
             isKindleUnlimited = true;
         } else if (isBookFree() && purchaseBook()) {
+            getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
+            // TODO: "Purchase" the book.
             isKindleUnlimited = false;
+            return;
         } else {
-            isKindleUnlimited = false;
+            getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
+            return;
         }
-        DriverUtils.sleep(9999L);
         // Enter the first `iframe`.
         WebElement kindleReaderFrame = null;
         int retries = 3;
         while (retries > 0 && kindleReaderFrame == null) {
             try {
+                driver.navigate().to(readerUrl + "?asin=" + asin);
+                DriverUtils.sleep(9999L);
                 kindleReaderFrame = driver.findElement(By.id("KindleReaderIFrame"));
             } catch (NoSuchElementException ignored) {
             }
             retries--;
         }
         if (kindleReaderFrame == null) {
-            throw new RuntimeException("Unable to find KindleReaderIFrame in document.");
+            throw new RuntimeException("Unable to find KindleReaderIFrame element for book `" + bookId + "`.");
         }
         final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
         final Map<String, String> text = new HashMap<>();
         final Map<String, String> imgUrlToSrc = new HashMap<>();
+        getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`");
         collectContent(readerDriver, text, imgUrlToSrc, email, password);
         writeBook(file, text);
         saveImages(bookFolder, imgUrlToSrc);
@@ -383,23 +401,25 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
+    boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
         driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksAll/dateDsc/");
+        DriverUtils.sleep(2500L);
         // TODO: Check for a sign-in prompt: `id=authportal-main-section`. Then sign in.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement ngAppDiv = aPageDiv.findElement(By.id("ng-app"));
-        final WebElement contentTableListDiv = ngAppDiv.findElement(By.className("contentTableList_myx"));
+        final WebElement contentContainerDiv = ngAppDiv.findElement(By.className("contentContainer_myx"));
+        final WebElement contentTableListDiv = contentContainerDiv.findElement(By.className("contentTableList_myx"));
         final WebElement gridUl = contentTableListDiv.findElement(By.tagName("ul"));
-        final List<WebElement> contentTableListRows = gridUl.findElements(By.className("contentTableListRow_myx"));
-        for (int i = 0; i < contentTableListRows.size(); i++) {
-            final WebElement contentTableListRow = contentTableListRows.get(i);
-            final WebElement titleDiv = contentTableListRow.findElement(By.id("title" + i));
+        final List<WebElement> lis = gridUl.findElements(By.tagName("li"));
+        for (int i = 0; i < lis.size(); i++) {
+            final WebElement li = lis.get(i);
+            final WebElement titleDiv = li.findElement(By.id("title" + i));
             final String titleText = titleDiv.getText().trim();
             if (title.equalsIgnoreCase(titleText)) {
-                final WebElement button = contentTableListRow.findElement(By.tagName("button"));
+                final WebElement button = li.findElement(By.tagName("button"));
                 button.click();
                 DriverUtils.sleep(2000L);
-                final WebElement returnLoanDiv = contentTableListRow.findElement(By.id("contentAction_returnLoan_myx"));
+                final WebElement returnLoanDiv = li.findElement(By.id("contentAction_returnLoan_myx"));
                 returnLoanDiv.click();
                 final WebElement popoverModalDiv = driver.findElement(By.className("myx-popover-modal"));
                 final WebElement okButton = popoverModalDiv.findElement(By.id("dialogButton_ok_myx "));  // Apparently there is a space there!

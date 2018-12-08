@@ -4,8 +4,8 @@ import com.ericrobertbrewer.bookspider.AbstractDatabaseHelper;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
-import com.ericrobertbrewer.web.DriverUtils;
-import com.ericrobertbrewer.web.WebDriverFactory;
+import com.ericrobertbrewer.web.driver.DriverUtils;
+import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import com.ericrobertbrewer.web.WebUtils;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
@@ -26,14 +26,14 @@ import java.util.logging.Logger;
 public class CommonSenseMedia extends SiteScraper {
 
     public static void main(String[] args) throws IOException {
-        Launcher.launch(args, new Provider() {
+        Launcher.launch(args, new Provider<CommonSenseMedia>() {
             @Override
-            public Class<? extends SiteScraper> getScraperClass() {
+            public Class<CommonSenseMedia> getScraperClass() {
                 return CommonSenseMedia.class;
             }
 
             @Override
-            public SiteScraper newInstance(Logger logger) {
+            public CommonSenseMedia newInstance(Logger logger) {
                 return new CommonSenseMedia(logger);
             }
 
@@ -55,10 +55,7 @@ public class CommonSenseMedia extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, final Launcher.Callback callback) {
-        if (force) {
-            throw new IllegalArgumentException("CommonSenseMedia does not support `force`=`true`.");
-        }
+    public void scrape(WebDriverFactory factory, File contentFolder, String[] args, final Launcher.Callback callback) {
         getLogger().log(Level.INFO, "Scraping Common Sense Media.");
         // Create frontier.
         final Queue<String> frontier = new LinkedList<>();

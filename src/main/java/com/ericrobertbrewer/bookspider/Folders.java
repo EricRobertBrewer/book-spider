@@ -33,7 +33,7 @@ public class Folders {
         return folder;
     }
 
-    static File getLogFile(String id) throws IOException {
+    public static File getLogFile(String id) throws IOException {
         return new File(getLogsFolder(id), LOG_DATE_FORMAT.format(new Date()) + ".log");
     }
 

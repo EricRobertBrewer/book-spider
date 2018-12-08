@@ -3,8 +3,8 @@ package com.ericrobertbrewer.bookspider.sites.text;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
-import com.ericrobertbrewer.web.DriverUtils;
-import com.ericrobertbrewer.web.WebDriverFactory;
+import com.ericrobertbrewer.web.driver.DriverUtils;
+import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -23,14 +23,14 @@ import java.util.logging.Logger;
 public class NewYorkTimesFirstChapters extends SiteScraper {
 
     public static void main(String[] args) throws IOException {
-        Launcher.launch(args, new Provider() {
+        Launcher.launch(args, new Provider<NewYorkTimesFirstChapters>() {
             @Override
-            public Class<? extends SiteScraper> getScraperClass() {
+            public Class<NewYorkTimesFirstChapters> getScraperClass() {
                 return NewYorkTimesFirstChapters.class;
             }
 
             @Override
-            public SiteScraper newInstance(Logger logger) {
+            public NewYorkTimesFirstChapters newInstance(Logger logger) {
                 return new NewYorkTimesFirstChapters(logger);
             }
 
@@ -64,7 +64,17 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, Launcher.Callback callback) {
+    public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
+        if (args.length > 1) {
+            throw new IllegalArgumentException("Usage: [force]");
+        }
+        // Process arguments.
+        final boolean force;
+        if (args.length > 0) {
+            force = Boolean.parseBoolean(args[0]);
+        } else {
+            force = false;
+        }
         getLogger().log(Level.INFO, "Scraping New York Times first chapters.");
         final WebDriver driver = factory.newInstance();
         // Set timeout for obsolete API call (to

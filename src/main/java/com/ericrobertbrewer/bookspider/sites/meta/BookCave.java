@@ -7,9 +7,9 @@ import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.bookspider.sites.text.AmazonKindle;
 import com.ericrobertbrewer.bookspider.sites.text.AmazonPreview;
-import com.ericrobertbrewer.web.DriverUtils;
-import com.ericrobertbrewer.web.WebDriverFactory;
 import com.ericrobertbrewer.web.WebUtils;
+import com.ericrobertbrewer.web.driver.DriverUtils;
+import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
@@ -27,14 +27,14 @@ import java.util.logging.Logger;
 public class BookCave extends SiteScraper {
 
     public static void main(String[] args) throws IOException {
-        Launcher.launch(args, new Provider() {
+        Launcher.launch(args, new Provider<BookCave>() {
             @Override
-            public Class<? extends SiteScraper> getScraperClass() {
+            public Class<BookCave> getScraperClass() {
                 return BookCave.class;
             }
 
             @Override
-            public SiteScraper newInstance(Logger logger) {
+            public BookCave newInstance(Logger logger) {
                 return new BookCave(logger);
             }
 
@@ -53,10 +53,7 @@ public class BookCave extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, final Launcher.Callback callback) {
-        if (force) {
-            throw new IllegalArgumentException("BookCave does not support `force`=`true`.");
-        }
+    public void scrape(WebDriverFactory factory, File contentFolder, String[] args, final Launcher.Callback callback) {
         getLogger().log(Level.INFO, "Scraping Book Cave.");
         // Create frontier.
         final Queue<String> frontier = new LinkedList<>();
@@ -767,19 +764,19 @@ public class BookCave extends SiteScraper {
     }
 
     @SuppressWarnings("unused")
-    private static class AmazonPreviewProvider implements Provider {
+    private static class AmazonPreviewProvider implements Provider<AmazonPreview> {
 
         public static void main(String[] args) throws IOException {
             Launcher.launch(args, new AmazonPreviewProvider());
         }
 
         @Override
-        public Class<? extends SiteScraper> getScraperClass() {
+        public Class<AmazonPreview> getScraperClass() {
             return AmazonPreview.class;
         }
 
         @Override
-        public SiteScraper newInstance(Logger logger) {
+        public AmazonPreview newInstance(Logger logger) {
             final List<Book> allBooks = getAllBooks(logger);
             final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
             return new AmazonPreview(logger, bookScrapeInfos);
@@ -792,19 +789,19 @@ public class BookCave extends SiteScraper {
     }
 
     @SuppressWarnings("unused")
-    private static class AmazonKindleProvider implements Provider {
+    private static class AmazonKindleProvider implements Provider<AmazonKindle> {
 
         public static void main(String[] args) throws IOException {
             Launcher.launch(args, new AmazonKindleProvider());
         }
 
         @Override
-        public Class<? extends SiteScraper> getScraperClass() {
+        public Class<AmazonKindle> getScraperClass() {
             return AmazonKindle.class;
         }
 
         @Override
-        public SiteScraper newInstance(Logger logger) {
+        public AmazonKindle newInstance(Logger logger) {
             final List<Book> allBooks = getAllBooks(logger);
             final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
             return new AmazonKindle(logger, bookScrapeInfos);

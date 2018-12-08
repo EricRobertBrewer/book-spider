@@ -5,7 +5,7 @@ import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.web.dl.FileDownloadInfo;
 import com.ericrobertbrewer.web.dl.FileDownloader;
-import com.ericrobertbrewer.web.WebDriverFactory;
+import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
@@ -30,7 +30,18 @@ public class AmazonPreview extends SiteScraper {
     }
 
     @Override
-    public void scrape(WebDriverFactory factory, File contentFolder, boolean force, String[] otherArgs, Launcher.Callback callback) {
+    public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
+        if (args.length > 1) {
+            throw new IllegalArgumentException("Usage: [force]");
+        }
+        // Process arguments.
+        final boolean force;
+        if (args.length > 0) {
+            force = Boolean.parseBoolean(args[0]);
+        } else {
+            force = false;
+        }
+        // Create images queue.
         final Queue<FileDownloadInfo> imagesQueue = new LinkedList<>();
         final FileDownloader fileDownloader = new FileDownloader();
         // Create scraping thread.
