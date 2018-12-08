@@ -61,6 +61,7 @@ public class AmazonKindle extends SiteScraper {
                 final WebDriver driver = factory.newInstance();
                 scrapeThreadsRunning.incrementAndGet();
                 ensureReaderIsSingleColumn(driver);
+                navigateToSignInPage(driver);
                 signIn(driver, email, password);
                 // Start scraping.
                 scrapeBooks(queue, driver, contentFolder, email, password, force);
