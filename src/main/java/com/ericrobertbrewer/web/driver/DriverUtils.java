@@ -6,6 +6,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 
 import java.util.List;
+import java.util.NoSuchElementException;
 
 public class DriverUtils {
 
@@ -70,5 +71,17 @@ public class DriverUtils {
             Thread.sleep(millis);
         } catch (InterruptedException ignored) {
         }
+    }
+
+    public static WebElement findElementWithRetries(WebElement element, By by, int retries, long delayMillis) {
+        while (retries > 1) {
+            try {
+                return element.findElement(by);
+            } catch (NoSuchElementException e) {
+                sleep(delayMillis);
+            }
+            retries--;
+        }
+        return element.findElement(by);
     }
 }
