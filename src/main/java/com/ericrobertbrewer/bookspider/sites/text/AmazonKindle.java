@@ -164,7 +164,7 @@ public class AmazonKindle extends SiteScraper {
         // Navigate to the Amazon store page.
         getLogger().log(Level.INFO, "Processing book `" + bookId + "`.");
         driver.navigate().to(url);
-        ensureKindleStorePage(driver);
+//        ensureKindleStorePage(driver);
         // Find the main container.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
