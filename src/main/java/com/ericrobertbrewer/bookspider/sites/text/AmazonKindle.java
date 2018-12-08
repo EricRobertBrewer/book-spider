@@ -507,6 +507,7 @@ public class AmazonKindle extends SiteScraper {
         FORMATTING_TAGS.add("a");
         FORMATTING_TAGS.add("i");
         FORMATTING_TAGS.add("b");
+        FORMATTING_TAGS.add("s");
     }
 
     private static boolean areAllFormatting(List<WebElement> elements) {
