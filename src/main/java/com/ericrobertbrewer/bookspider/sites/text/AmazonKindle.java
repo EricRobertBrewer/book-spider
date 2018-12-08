@@ -340,7 +340,7 @@ public class AmazonKindle extends SiteScraper {
         // Find the main container.
         final WebElement bookContainerDiv = readerDriver.findElement(By.id("kindleReader_book_container"));
         // Find the navigation arrows.
-        final WebElement touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.id("kindleReader_touchLayer"), 3, 4500L);
+        final WebElement touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.xpath("./div[@id='kindleReader_touchLayer']"), 3, 4500L);
         final WebElement sideMarginDiv = touchLayerDiv.findElement(By.id("kindleReader_sideMargin"));
         if (fromStart) {
             // Turn pages left as far as possible.
