@@ -179,17 +179,22 @@ public class AmazonKindle extends SiteScraper {
         final String asin = findAmazonId(driver);
         // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
         final boolean isKindleUnlimited;
-        if (isBookBorrowedThroughKindleUnlimited(dpContainerDiv)) {
-            getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Amazon Kindle. Navigating...");
+        if (isBookOwnedOrBorrowedThroughKindleUnlimited(dpContainerDiv)) {
+            getLogger().log(Level.INFO, "Book `" + bookId + "` already owned or borrowed through Amazon Kindle. Navigating...");
             isKindleUnlimited = true;
         } else if (borrowBookThroughKindleUnlimited(driver, dpContainerDiv)) {
             getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
             isKindleUnlimited = true;
-        } else if (isBookFree() && purchaseBook()) {
+        } else if (isBookFree(dpContainerDiv)) {
             getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
-            // TODO: "Purchase" the book.
+            // "Purchase" the book.
+            final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
+            final WebElement buyboxDiv = rightColDiv.findElement(By.id("buybox"));
+            final WebElement buyOneClickForm = buyboxDiv.findElement(By.id("buyOneClick"));
+            final WebElement checkoutButtonIdSpan = buyOneClickForm.findElement(By.id("checkoutButtonId"));
+            checkoutButtonIdSpan.click();
+            // Since it not part of the Kindle Unlimited collection, it does not have to be returned.
             isKindleUnlimited = false;
-            return;
         } else {
             getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
             return;
@@ -260,9 +265,9 @@ public class AmazonKindle extends SiteScraper {
         return WebUtils.getLastUrlComponent(url);
     }
 
-    private boolean isBookBorrowedThroughKindleUnlimited(WebElement dpContainerDiv) {
+    private boolean isBookOwnedOrBorrowedThroughKindleUnlimited(WebElement dpContainerDiv) {
         try {
-            // Check if the book has already been acquired through Kindle Unlimited.
+            // Check if the book has already been purchased or acquired through Kindle Unlimited.
             dpContainerDiv.findElement(By.id("dbs-goto-bookstore-rw"));
             return true;
         } catch (NoSuchElementException ignored) {
@@ -283,11 +288,23 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private boolean isBookFree() {
-        return false;
-    }
-
-    private boolean purchaseBook() {
+    private boolean isBookFree(WebElement dpContainerDiv) {
+        final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
+        final WebElement buyboxDiv = rightColDiv.findElement(By.id("buybox"));
+        final WebElement buyTable = buyboxDiv.findElement(By.tagName("table"));
+        final List<WebElement> trs = buyTable.findElements(By.tagName("tr"));
+        for (WebElement tr : trs) {
+            final List<WebElement> tds = tr.findElements(By.tagName("td"));
+            if (tds.size() < 2) {
+                continue;
+            }
+            final String td0Text = tds.get(0).getText().trim();
+            if (!"Kindle Price:".equalsIgnoreCase(td0Text)) {
+                continue;
+            }
+            final String td1Text = tds.get(1).getText().trim();
+            return td1Text.startsWith("$0.00");
+        }
         return false;
     }
 
