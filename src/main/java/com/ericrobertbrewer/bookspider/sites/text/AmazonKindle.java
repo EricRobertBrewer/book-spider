@@ -179,17 +179,20 @@ public class AmazonKindle extends SiteScraper {
         final String asin = findAmazonId(driver);
         // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
         final boolean isKindleUnlimited;
-        if (isBookOwnedOrBorrowedThroughKindleUnlimited(dpContainerDiv)) {
-            getLogger().log(Level.INFO, "Book `" + bookId + "` already owned or borrowed through Amazon Kindle. Navigating...");
+        final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
+        final WebElement buyboxDiv = rightColDiv.findElement(By.id("buybox"));
+        if (isBookOwned(buyboxDiv)) {
+            getLogger().log(Level.INFO, "Book `" + bookId + "` already owned. Navigating...");
+            isKindleUnlimited = false;
+        } else if (isBookBorrowedThroughKindleUnlimited(buyboxDiv)) {
+            getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Amazon Kindle. Navigating...");
             isKindleUnlimited = true;
-        } else if (borrowBookThroughKindleUnlimited(driver, dpContainerDiv)) {
+        } else if (borrowBookThroughKindleUnlimited(driver, buyboxDiv)) {
             getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
             isKindleUnlimited = true;
-        } else if (isBookFree(dpContainerDiv)) {
+        } else if (isBookFree(buyboxDiv)) {
             getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
             // "Purchase" the book.
-            final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
-            final WebElement buyboxDiv = rightColDiv.findElement(By.id("buybox"));
             final WebElement buyOneClickForm = buyboxDiv.findElement(By.id("buyOneClick"));
             final WebElement checkoutButtonIdSpan = buyOneClickForm.findElement(By.id("checkoutButtonId"));
             checkoutButtonIdSpan.click();
@@ -265,20 +268,32 @@ public class AmazonKindle extends SiteScraper {
         return WebUtils.getLastUrlComponent(url);
     }
 
-    private boolean isBookOwnedOrBorrowedThroughKindleUnlimited(WebElement dpContainerDiv) {
+    private boolean isBookOwned(WebElement buyboxDiv) {
         try {
-            // Check if the book has already been purchased or acquired through Kindle Unlimited.
-            dpContainerDiv.findElement(By.id("dbs-goto-bookstore-rw"));
-            return true;
+            // Check if the book has already been purchased.
+            final WebElement readNowDescriptionTextSpan = buyboxDiv.findElement(By.id("read-now-description-text"));
+            final String readNowDescriptionText = readNowDescriptionTextSpan.getText().trim();
+            return readNowDescriptionText.startsWith("You already own this item");
         } catch (NoSuchElementException ignored) {
         }
         return false;
     }
 
-    private boolean borrowBookThroughKindleUnlimited(WebDriver driver, WebElement dpContainerDiv) {
+    private boolean isBookBorrowedThroughKindleUnlimited(WebElement buyboxDiv) {
+        try {
+            // Check if the book has already been acquired through Kindle Unlimited.
+            final WebElement readNowDescriptionTextSpan = buyboxDiv.findElement(By.id("read-now-description-text"));
+            final String readNowDescriptionText = readNowDescriptionTextSpan.getText().trim();
+            return readNowDescriptionText.startsWith("You already borrowed this item");
+        } catch (NoSuchElementException ignored) {
+        }
+        return false;
+    }
+
+    private boolean borrowBookThroughKindleUnlimited(WebDriver driver, WebElement buyboxDiv) {
         try {
             // Check if the book is available through Kindle Unlimited. If so, click 'Read for Free'.
-            final WebElement borrowButton = dpContainerDiv.findElement(By.id("borrow-button"));
+            final WebElement borrowButton = buyboxDiv.findElement(By.id("borrow-button"));
             borrowButton.click();
             DriverUtils.sleep(5000L);
             driver.findElement(By.id("dbs-readnow-bookstore-rw"));
@@ -288,9 +303,7 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private boolean isBookFree(WebElement dpContainerDiv) {
-        final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
-        final WebElement buyboxDiv = rightColDiv.findElement(By.id("buybox"));
+    private boolean isBookFree(WebElement buyboxDiv) {
         final WebElement buyTable = buyboxDiv.findElement(By.tagName("table"));
         final List<WebElement> trs = buyTable.findElements(By.tagName("tr"));
         for (WebElement tr : trs) {
@@ -313,7 +326,7 @@ public class AmazonKindle extends SiteScraper {
         DriverUtils.sleep(5000L);
         final WebElement kindleReaderContainer = driver.findElement(By.id("KindleReaderContainer"));
         // Enter the first `iframe`.
-        final WebElement kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainer, By.id("KindleReaderIFrame"), 3, 7500L);
+        final WebElement kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainer, By.id("KindleReaderIFrame"), 5, 7500L);
         final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
         // Close the 'Sync Position' dialog, if it's open.
         try {
