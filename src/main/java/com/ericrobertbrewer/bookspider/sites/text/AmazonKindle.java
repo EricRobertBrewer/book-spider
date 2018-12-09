@@ -517,7 +517,8 @@ public class AmazonKindle extends SiteScraper {
             return false;
         }
          // Return the book with the given title by clicking [...] (Actions column) -> [Return book] -> [Yes]
-        final WebElement contentContainerDiv = ngAppDiv.findElement(By.className("contentContainer_myx"));
+        final WebElement contentAppDiv = DriverUtils.findElementWithRetries(ngAppDiv, By.className("contentApp_myx"), 3, 2500L);
+        final WebElement contentContainerDiv = contentAppDiv.findElement(By.className("contentContainer_myx"));
         final WebElement contentTableListDiv = contentContainerDiv.findElement(By.className("contentTableList_myx"));
         final WebElement gridUl = contentTableListDiv.findElement(By.tagName("ul"));
         final List<WebElement> lis = gridUl.findElements(By.tagName("li"));
