@@ -164,7 +164,7 @@ public class AmazonKindle extends SiteScraper {
         // Navigate to the Amazon store page.
         getLogger().log(Level.INFO, "Processing book `" + bookId + "`.");
         driver.navigate().to(url);
-//        ensureKindleStorePage(driver);
+        ensureKindleStorePage(driver);
         // Find the main container.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
@@ -262,10 +262,9 @@ public class AmazonKindle extends SiteScraper {
                 final WebElement a = li.findElement(By.tagName("a"));
                 // Click the media item. This will navigate to the Kindle store page.
                 a.click();
-            } else {
-                // The 'Kindle' media item is selected. We're looking at the correct page.
-                return;
             }
+            // Whether we've navigated to the Kindle store page or we're already there, stop looking for the 'Kindle' item.
+            return;
         }
     }
 
