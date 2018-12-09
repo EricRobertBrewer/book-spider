@@ -56,8 +56,8 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
 
     @Test
     void returnKindleUnlimitedBookTest() {
-        getScraper().navigateToSignInPage(driver);
-        getScraper().signIn(driver, EMAIL, PASSWORD);
+//        getScraper().navigateToSignInPage(driver);
+//        getScraper().signIn(driver, EMAIL, PASSWORD);
         // 'Gate 76' in Amazon Kindle Store: `https://www.amazon.com/dp/B07BD35VN6`.
         assertTrue(getScraper().returnKindleUnlimitedBook(driver, "Gate 76", EMAIL, PASSWORD));
     }

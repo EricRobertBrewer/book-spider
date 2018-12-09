@@ -491,6 +491,7 @@ public class AmazonKindle extends SiteScraper {
     }
 
     boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
+        // Navigate to the 'Content and Devices' account page.
         driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksAll/dateDsc/");
         DriverUtils.sleep(2500L);
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
@@ -507,6 +508,9 @@ public class AmazonKindle extends SiteScraper {
             }
             return false;
         }
+        // Filter the list by books borrowed through Kindle Unlimited.
+        filterContentByBorrows(ngAppDiv);
+         // Return the book with the given title by clicking [...] (Actions column) -> [Return book] -> [Yes]
         final WebElement contentContainerDiv = ngAppDiv.findElement(By.className("contentContainer_myx"));
         final WebElement contentTableListDiv = contentContainerDiv.findElement(By.className("contentTableList_myx"));
         final WebElement gridUl = contentTableListDiv.findElement(By.tagName("ul"));
@@ -528,6 +532,50 @@ public class AmazonKindle extends SiteScraper {
             }
         }
         return false;
+    }
+
+    private void filterContentByBorrows(WebElement ngAppDiv) {
+        // Filter the list to show only borrowed books: Click [All] -> [Borrowed].
+        final WebElement contentTaskBarDetailsDiv = ngAppDiv.findElement(By.className("contentTaskBarDetails_myx"));
+        final WebElement contentTaskBarDiv = contentTaskBarDetailsDiv.findElement(By.className("contentTaskBar_myx"));
+        final List<WebElement> contentTaskBarItemDivs = contentTaskBarDiv.findElements(By.className("contentTaskBarItem_myx"));
+        // Find the correct task bar item.
+        for (WebElement contentTaskBarItemDiv : contentTaskBarItemDivs) {
+            final String taskBarItemText = contentTaskBarItemDiv.getText().trim();
+            if (!taskBarItemText.startsWith("Show:")) {
+                continue;
+            }
+            // Find the correct task bar element.
+            final List<WebElement> contentTaskBarElementDivs = contentTaskBarItemDiv.findElements(By.className("contentTaskBarElement_myx"));
+            for (WebElement contentTaskBarElementDiv : contentTaskBarElementDivs) {
+                final String contentTaskBarElementText = contentTaskBarElementDiv.getText().trim();
+                if (!contentTaskBarElementText.startsWith("All")) {
+                    continue;
+                }
+                // Click [All].
+                contentTaskBarElementDiv.click();
+                // Find the correct (open) drop down.
+                final List<WebElement> customDropdownDivs = contentTaskBarItemDiv.findElements(By.className("customDropdown_myx"));
+                for (WebElement customDropdownDiv : customDropdownDivs) {
+                    final String customDropdownClassName = customDropdownDiv.getAttribute("class");
+                    if (!customDropdownClassName.contains("open_myx")) {
+                        continue;
+                    }
+                    final WebElement ul = customDropdownDiv.findElement(By.tagName("ul"));
+                    final List<WebElement> lis = ul.findElements(By.tagName("li"));
+                    for (WebElement li : lis) {
+                        final String liText = li.getText().trim();
+                        if (!liText.equalsIgnoreCase("Borrows")) {
+                            continue;
+                        }
+                        // Click [Borrows].
+                        li.click();
+                        DriverUtils.sleep(7500L);
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     private static final Set<String> FORMATTING_TAGS = new HashSet<>();
