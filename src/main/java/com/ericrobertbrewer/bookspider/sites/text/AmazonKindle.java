@@ -187,8 +187,20 @@ public class AmazonKindle extends SiteScraper {
         } else if (isBookBorrowedThroughKindleUnlimited(buyboxDiv)) {
             getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Amazon Kindle. Navigating...");
             isKindleUnlimited = true;
-        } else if (borrowBookThroughKindleUnlimited(driver, buyboxDiv)) {
-            getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
+        } else if (canBorrowBookThroughKindleUnlimited(buyboxDiv)) {
+            // Click 'Read for Free'
+            final WebElement borrowButton = buyboxDiv.findElement(By.id("borrow-button"));
+            borrowButton.click();
+            DriverUtils.sleep(5000L);
+            try {
+                // Check if the borrowing was successful.
+                driver.findElement(By.id("dbs-readnow-bookstore-rw"));
+                getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
+            } catch (NoSuchElementException e) {
+                // We were unable to borrow the book. Probably the 10-book limit is met.
+                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`. Has the 10-book limit been met? Skipping.");
+                return;
+            }
             isKindleUnlimited = true;
         } else if (isBookFree(buyboxDiv)) {
             getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
@@ -196,7 +208,7 @@ public class AmazonKindle extends SiteScraper {
             final WebElement buyOneClickForm = buyboxDiv.findElement(By.id("buyOneClick"));
             final WebElement checkoutButtonIdSpan = buyOneClickForm.findElement(By.id("checkoutButtonId"));
             checkoutButtonIdSpan.click();
-            // Since it not part of the Kindle Unlimited collection, it does not have to be returned.
+            // Since it's not part of the Kindle Unlimited collection, it does not have to be returned.
             isKindleUnlimited = false;
         } else {
             getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
@@ -290,13 +302,10 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private boolean borrowBookThroughKindleUnlimited(WebDriver driver, WebElement buyboxDiv) {
+    private boolean canBorrowBookThroughKindleUnlimited(WebElement buyboxDiv) {
         try {
-            // Check if the book is available through Kindle Unlimited. If so, click 'Read for Free'.
-            final WebElement borrowButton = buyboxDiv.findElement(By.id("borrow-button"));
-            borrowButton.click();
-            DriverUtils.sleep(5000L);
-            driver.findElement(By.id("dbs-readnow-bookstore-rw"));
+            // Check if the book is available through Kindle Unlimited.
+            buyboxDiv.findElement(By.id("borrow-button"));
             return true;
         } catch (NoSuchElementException ignored) {
         }
