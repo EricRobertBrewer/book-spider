@@ -186,8 +186,13 @@ public class AmazonKindle extends SiteScraper {
         final WebElement ebooksProductTitle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
         final String title = ebooksProductTitle.getText().trim();
         // Get this book's Amazon ID.
-        // For example: `https://read.amazon.com/?asin=B07JK9Z14K`.
+        // For example: `B07JK9Z14K`.
+        // Used as: `https://read.amazon.com/?asin=<AMAZON_ID>`.
         final String asin = findAmazonId(driver);
+        if (asin == null) {
+            getLogger().log(Level.SEVERE, "Unable to find Amazon ID for book `" + bookId + "` within URL `" + url + "`. Skipping.");
+            return;
+        }
         // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
         final boolean isKindleUnlimited;
         final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
@@ -294,12 +299,12 @@ public class AmazonKindle extends SiteScraper {
     private String findAmazonId(WebDriver driver) {
         final String url = driver.getCurrentUrl();
         final String[] components = url.split("[/?]");
-        for (int i = 0; i < components.length; i++) {
+        for (int i = 0; i < components.length - 1; i++) {
             if ("dp".equals(components[i])) {
                 return components[i + 1];
             }
         }
-        return WebUtils.getLastUrlComponent(url);
+        return null;
     }
 
     private boolean isBookOwned(WebElement buyboxDiv) {
