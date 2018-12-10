@@ -470,13 +470,12 @@ public class AmazonKindle extends SiteScraper {
                 pageTurnAreaRightDiv.click();
             } catch (StaleElementReferenceException e) {
                 // Check to see if we have been signed out automatically.
-                final String url = readerDriver.getCurrentUrl();
+                final String url = driver.getCurrentUrl();
                 if (url.startsWith("https://www.amazon.com/ap/signin")) {
                     // If so, sign in again and continue collecting content from the same position in the reader.
-                    signIn(readerDriver, email, password);
+                    signIn(driver, email, password);
                     navigateToReaderPage(driver, asin);
-                    DriverUtils.sleep(5000L);
-                    collectContent(readerDriver, asin, text, imgUrlToSrc, email, password, false);
+                    collectContent(driver, asin, text, imgUrlToSrc, email, password, false);
                 }
                 return;
             }
