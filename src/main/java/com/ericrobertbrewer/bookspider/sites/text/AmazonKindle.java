@@ -456,7 +456,10 @@ public class AmazonKindle extends SiteScraper {
         }
         // Turn pages right while extracting content.
         final WebElement centerDiv = bookContainerDiv.findElement(By.id("kindleReader_center"));
+        final long startTime = System.currentTimeMillis();
+        int pages = 0;
         while (true) {
+            pages++;
             try {
                 final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
                 // Extract the visible text on this page.
@@ -465,6 +468,8 @@ public class AmazonKindle extends SiteScraper {
                 final WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
                 final String className = pageTurnAreaRightDiv.getAttribute("class");
                 if (!className.contains("pageArrow")) {
+                    final long totalTime = System.currentTimeMillis() - startTime;
+                    getLogger().log(Level.INFO, "Finished collecting content; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
                     break;
                 }
                 pageTurnAreaRightDiv.click();
