@@ -117,50 +117,74 @@ public class AmazonKindle extends SiteScraper {
 
     private void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, boolean force) {
         while (!queue.isEmpty()) {
+            // Pull the next book off of the queue.
             final BookScrapeInfo bookScrapeInfo = queue.poll();
-            boolean success = false;
+            // Get the folder which will hold this book's data.
+            final File bookFolder;
+            try {
+                bookFolder = getBookFolder(contentFolder, bookScrapeInfo.id);
+            } catch (IOException e) {
+                getLogger().log(Level.SEVERE, "Unable to create book folder for `" + bookScrapeInfo.id + "`. Skipping.");
+                continue;
+            }
+            // Check whether we can skip this book.
+            if (!shouldScrapeBook(bookFolder, force)) {
+                continue;
+            }
+            // Get the text file for this book.
+            final File textFile;
+            try {
+                textFile = getTextFile(bookFolder, force);
+            } catch (IOException e) {
+                getLogger().log(Level.SEVERE, "Encountered IOException while accessing text file for book `" + bookScrapeInfo.id + "`.", e);
+                continue;
+            }
+            // Try scraping the text for this book.
             for (String url : bookScrapeInfo.urls) {
-                if (success) {
+                try {
+                    scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, textFile, email, password);
                     break;
-                }
-                int retries = 3;
-                while (retries > 0) {
-                    try {
-                        scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, email, password, force);
-                        success = true;
-                        break;
-                    } catch (IOException e) {
-                        getLogger().log(Level.WARNING, "Encountered IOException while scraping book `" + bookScrapeInfo.id + "`.", e);
-                    } catch (NoSuchElementException e) {
-                        getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
-                    } catch (Throwable t) {
-                        getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + bookScrapeInfo.id + "`.", t);
-                    }
-                    retries--;
+                } catch (NoSuchElementException e) {
+                    getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
+                } catch (Throwable t) {
+                    getLogger().log(Level.WARNING, "Encountered unknown error while scraping book `" + bookScrapeInfo.id + "`.", t);
                 }
             }
         }
     }
 
-    private void scrapeBook(String bookId, String url, WebDriver driver, File contentFolder, String email, String password, boolean force) throws IOException {
-        // Create the book folder if it doesn't exist.
+    private File getBookFolder(File contentFolder, String bookId) throws IOException {
         final File bookFolder = new File(contentFolder, bookId);
+        // Create the book folder if it doesn't exist.
         if (!bookFolder.exists() && !bookFolder.mkdirs()) {
             throw new IOException("Unable to create book folder for `" + bookId + "`.");
         }
+        return bookFolder;
+    }
+
+    private boolean shouldScrapeBook(File bookFolder, boolean force) {
+        if (force) {
+            return true;
+        }
+        final File file = new File(bookFolder, "text.txt");
+        return !file.exists();
+    }
+
+    private File getTextFile(File bookFolder, boolean force) throws IOException {
         // Check if contents for this book already exist.
         final File file = new File(bookFolder, "text.txt");
         if (file.exists()) {
             if (force) {
-                // `force`==`true`. Delete the existing file.
+                // Delete the existing file.
                 if (!file.delete()) {
                     throw new IOException("Unable to delete existing book text file for `" + bookFolder.getName() + "` when `force`==`true`.");
                 }
-            } else {
-                // `force`==`false`. Quit.
-                return;
             }
         }
+        return file;
+    }
+
+    private void scrapeBook(String bookId, String url, WebDriver driver, File bookFolder, File textFile, String email, String password) throws IOException {
         // Navigate to the Amazon store page.
         getLogger().log(Level.INFO, "Processing book `" + bookId + "`.");
         driver.navigate().to(url);
@@ -182,9 +206,15 @@ public class AmazonKindle extends SiteScraper {
         final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
         // Get this book's title. This may be used later to return a book borrowed through Kindle Unlimited.
         final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
-        final WebElement booksTitleDiv = centerColDiv.findElement(By.id("booksTitle"));
-        final WebElement ebooksProductTitle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
-        final String title = ebooksProductTitle.getText().trim();
+        final String title;
+        try {
+            final WebElement booksTitleDiv = centerColDiv.findElement(By.id("booksTitle"));
+            final WebElement ebooksProductTitle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
+            title = ebooksProductTitle.getText().trim();
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.WARNING, "Unable to find book title for `" + bookId + "`. Perhaps the paperback product page is shown instead of Kindle? Skipping.");
+            return;
+        }
         // Get this book's Amazon ID.
         // For example: `B07JK9Z14K`.
         // Used as: `https://read.amazon.com/?asin=<AMAZON_ID>`.
@@ -230,13 +260,23 @@ public class AmazonKindle extends SiteScraper {
             getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
             return;
         }
+        // Start collecting content.
         getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`");
         final Map<String, String> text = new HashMap<>();
         final Map<String, String> imgUrlToSrc = new HashMap<>();
+        navigateToReaderPage(driver, asin);
+        DriverUtils.sleep(5000L);
         try {
-            collectContent(driver, asin, text, imgUrlToSrc, email, password, true);
-            writeBook(file, text);
-            saveImages(bookFolder, imgUrlToSrc);
+            collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, 5);
+            // Check whether any content has been extracted.
+            if (text.size() > 0) {
+                // Persist content once it has been totally collected.
+                writeBook(textFile, text);
+                saveImages(bookFolder, imgUrlToSrc);
+                getLogger().log(Level.INFO, "Successfully collected and saved content for book `" + bookId + "`.");
+            } else {
+                getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "` after retries. Quitting.");
+            }
         } finally {
             // Return this book to avoid reaching the 10-book limit for Kindle Unlimited.
             // Hitting the limit prevents any other books from being borrowed through KU.
@@ -357,12 +397,37 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private void collectContent(WebDriver driver, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart) {
+    private void navigateToReaderPage(WebDriver driver, String asin) {
         driver.navigate().to("https://read.amazon.com/?asin=" + asin);
-        DriverUtils.sleep(5000L);
+    }
+
+    private void collectContentWithRetries(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, int maxRetries) {
+        // Catch exceptions the first few times...
+        int retries = maxRetries;
+        while (retries > 1) {
+            try {
+                collectContent(driver, asin, text, imgUrlToSrc, email, password, retries == maxRetries);
+                if (text.size() > 0) {
+                    return;
+                } else {
+                    // Occasionally, the text content hasn't been loaded into the page and this method will
+                    // suppose that it is finished. In this case, pause, then try again.
+                    getLogger().log(Level.WARNING, "`collectContent` for book `" + bookId + "` completed without failing or extracting any text. " + retries + " retries left. Pausing, then retrying...");
+                    DriverUtils.sleep(5000L);
+                }
+            } catch (Throwable t) {
+                getLogger().log(Level.WARNING, "Encountered error while collecting content for book `" + bookId + "`. Retrying.", t);
+            }
+            retries--;
+        }
+        // Then fail the last time.
+        collectContent(driver, asin, text, imgUrlToSrc, email, password, false);
+    }
+
+    private void collectContent(WebDriver driver, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart) {
         final WebElement kindleReaderContainer = driver.findElement(By.id("KindleReaderContainer"));
         // Enter the first `iframe`.
-        final WebElement kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainer, By.id("KindleReaderIFrame"), 5, 7500L);
+        final WebElement kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainer, By.id("KindleReaderIFrame"), 3, 2500L);
         final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
         // Close the 'Sync Position' dialog, if it's open.
         try {
@@ -376,7 +441,7 @@ public class AmazonKindle extends SiteScraper {
         // Find the main container.
         final WebElement bookContainerDiv = readerDriver.findElement(By.id("kindleReader_book_container"));
         // Find the navigation arrows.
-        final WebElement touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.xpath("./div[@id='kindleReader_touchLayer']"), 3, 4500L);
+        final WebElement touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.id("kindleReader_touchLayer"), 3, 2500L);
         final WebElement sideMarginDiv = touchLayerDiv.findElement(By.id("kindleReader_sideMargin"));
         if (fromStart) {
             // Turn pages left as far as possible.
@@ -394,7 +459,7 @@ public class AmazonKindle extends SiteScraper {
         while (true) {
             try {
                 final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
-                // Extract the visible text.
+                // Extract the visible text on this page.
                 addVisibleContent(readerDriver, contentDiv, text, imgUrlToSrc);
                 // Attempt to turn the page right.
                 final WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
@@ -409,6 +474,8 @@ public class AmazonKindle extends SiteScraper {
                 if (url.startsWith("https://www.amazon.com/ap/signin")) {
                     // If so, sign in again and continue collecting content from the same position in the reader.
                     signIn(readerDriver, email, password);
+                    navigateToReaderPage(driver, asin);
+                    DriverUtils.sleep(5000L);
                     collectContent(readerDriver, asin, text, imgUrlToSrc, email, password, false);
                 }
                 return;
