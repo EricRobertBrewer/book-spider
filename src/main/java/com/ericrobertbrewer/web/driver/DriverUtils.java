@@ -1,7 +1,12 @@
 package com.ericrobertbrewer.web.driver;
 
 import org.openqa.selenium.*;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.FluentWait;
+import org.openqa.selenium.support.ui.Wait;
+import org.openqa.selenium.support.ui.WebDriverWait;
 
+import java.time.Duration;
 import java.util.List;
 
 public class DriverUtils {
@@ -62,22 +67,19 @@ public class DriverUtils {
         return s.toString();
     }
 
-    public static void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException ignored) {
-        }
+    public static WebElement findElementWithRetries(WebDriver driver, By by, int retries, long delayMillis) {
+        final Wait<WebDriver> wait = populateWait(new FluentWait<>(driver), retries, delayMillis);
+        return wait.until(d -> d.findElement(by));
     }
 
     public static WebElement findElementWithRetries(WebElement element, By by, int retries, long delayMillis) {
-        while (retries > 1) {
-            try {
-                return element.findElement(by);
-            } catch (NoSuchElementException e) {
-                sleep(delayMillis);
-            }
-            retries--;
-        }
-        return element.findElement(by);
+        final Wait<WebElement> wait = populateWait(new FluentWait<>(element), retries, delayMillis);
+        return wait.until(e -> e.findElement(by));
+    }
+
+    private static <T> FluentWait<T> populateWait(FluentWait<T> wait, int retries, long delayMillis) {
+        return wait.withTimeout(Duration.ofMillis(retries * delayMillis))
+                .pollingEvery(Duration.ofMillis(delayMillis))
+                .ignoring(NoSuchElementException.class);
     }
 }

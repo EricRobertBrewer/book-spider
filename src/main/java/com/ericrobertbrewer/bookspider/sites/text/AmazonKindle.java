@@ -8,13 +8,19 @@ import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.support.ui.FluentWait;
+import org.openqa.selenium.support.ui.Wait;
+import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -61,6 +67,7 @@ public class AmazonKindle extends SiteScraper {
                 final WebDriver driver = factory.newInstance();
                 scrapeThreadsRunning.incrementAndGet();
                 ensureReaderIsSingleColumn(driver);
+                driver.manage().timeouts().implicitlyWait(1, TimeUnit.SECONDS);
                 navigateToSignInPage(driver);
                 signIn(driver, email, password);
                 // Start scraping.
@@ -237,10 +244,10 @@ public class AmazonKindle extends SiteScraper {
             // Click 'Read for Free'
             final WebElement borrowButton = buyboxDiv.findElement(By.id("borrow-button"));
             borrowButton.click();
-            DriverUtils.sleep(5000L);
             try {
                 // Check if the borrowing was successful.
-                driver.findElement(By.id("dbs-readnow-bookstore-rw"));
+                final WebDriverWait wait = new WebDriverWait(driver, 5);
+                wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("dbs-readnow-bookstore-rw")));
                 getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
             } catch (NoSuchElementException e) {
                 // We were unable to borrow the book. Probably the 10-book limit is met.
@@ -265,7 +272,6 @@ public class AmazonKindle extends SiteScraper {
         final Map<String, String> text = new HashMap<>();
         final Map<String, String> imgUrlToSrc = new HashMap<>();
         navigateToReaderPage(driver, asin);
-        DriverUtils.sleep(5000L);
         try {
             collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, 5);
             // Check whether any content has been extracted.
@@ -413,7 +419,6 @@ public class AmazonKindle extends SiteScraper {
                     // Occasionally, the text content hasn't been loaded into the page and this method will
                     // suppose that it is finished. In this case, pause, then try again.
                     getLogger().log(Level.WARNING, "`collectContent` for book `" + bookId + "` completed without failing or extracting any text. " + retries + " retries left. Pausing, then retrying...");
-                    DriverUtils.sleep(5000L);
                 }
             } catch (Throwable t) {
                 getLogger().log(Level.WARNING, "Encountered error while collecting content for book `" + bookId + "`. Retrying.", t);
@@ -425,17 +430,15 @@ public class AmazonKindle extends SiteScraper {
     }
 
     private void collectContent(WebDriver driver, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart) {
-        final WebElement kindleReaderContainer = driver.findElement(By.id("KindleReaderContainer"));
         // Enter the first `iframe`.
-        final WebElement kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainer, By.id("KindleReaderIFrame"), 3, 2500L);
-        final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
+        final WebDriverWait frameWait = new WebDriverWait(driver, 20);
+        final WebDriver readerDriver = frameWait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(By.id("KindleReaderIFrame")));
         // Close the 'Sync Position' dialog, if it's open.
         try {
             final WebElement syncPositionDiv = readerDriver.findElement(By.id("kindleReader_dialog_syncPosition"));
             // Click 'Make This the Furthest Read Location'.
             final WebElement resetButton = syncPositionDiv.findElement(By.id("kindleReader_dialog_syncPosition_reset_btn"));
             resetButton.click();
-            DriverUtils.sleep(3000L);
         } catch (WebDriverException ignored) {
         }
         // Find the main container.
@@ -600,7 +603,6 @@ public class AmazonKindle extends SiteScraper {
     boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
         // Navigate to the 'Content and Devices' account page, showing only borrowed books.
         driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksBorrows/dateDsc/");
-        DriverUtils.sleep(2500L);
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement ngAppDiv;
         try {
@@ -628,8 +630,11 @@ public class AmazonKindle extends SiteScraper {
             if (title.equalsIgnoreCase(titleText)) {
                 final WebElement button = li.findElement(By.tagName("button"));
                 button.click(); // [...]
-                DriverUtils.sleep(2000L);
-                final WebElement returnLoanDiv = li.findElement(By.id("contentAction_returnLoan_myx"));
+                final Wait<WebElement> wait = new FluentWait<>(li)
+                        .withTimeout(Duration.ofMillis(3000L))
+                        .pollingEvery(Duration.ofMillis(1000L))
+                        .ignoring(NoSuchElementException.class);
+                final WebElement returnLoanDiv = wait.until(e -> e.findElement(By.id("contentAction_returnLoan_myx")));
                 returnLoanDiv.click(); // [Return book]
                 final WebElement popoverModalDiv = driver.findElement(By.className("myx-popover-modal"));
                 final WebElement okButton = popoverModalDiv.findElement(By.id("dialogButton_ok_myx "));  // Apparently there is a space there!
