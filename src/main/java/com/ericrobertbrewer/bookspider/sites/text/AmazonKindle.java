@@ -196,10 +196,10 @@ public class AmazonKindle extends SiteScraper {
             getLogger().log(Level.WARNING, "The Amazon page for book `" + bookId + "`. may no longer exist; started at `" + url + "`, ended at `" + driver.getCurrentUrl() + "`. Skipping.");
             return;
         }
-        // Ensure that we have navigated to the Amazon store page for the Kindle version of the book.
-        ensureKindleStorePage(driver);
         // Close popover.
         closePopoverIfVisible(driver);
+        // Ensure that we have navigated to the Amazon store page for the Kindle version of the book.
+        ensureKindleStorePage(driver);
         // Find the main container.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
