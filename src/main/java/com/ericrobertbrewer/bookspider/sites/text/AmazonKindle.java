@@ -172,7 +172,10 @@ public class AmazonKindle extends SiteScraper {
             getLogger().log(Level.WARNING, "The Amazon page for book `" + bookId + "`. may no longer exist; started at `" + url + "`, ended at `" + driver.getCurrentUrl() + "`. Skipping.");
             return;
         }
+        // Ensure that we have navigated to the Amazon store page for the Kindle version of the book.
         ensureKindleStorePage(driver);
+        // Close popover.
+        closePopoverIfVisible(driver);
         // Find the main container.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
@@ -273,6 +276,18 @@ public class AmazonKindle extends SiteScraper {
             }
             // Whether we've navigated to the Kindle store page or we're already there, stop looking for the 'Kindle' item.
             return;
+        }
+    }
+
+    private void closePopoverIfVisible(WebDriver driver) {
+        // Close the "Read this book for free with Kindle Unlimited" popover, if it appears.
+        // See `https://www.amazon.com/dp/1980537615`.
+        try {
+            final WebElement aModalScrollerDiv = driver.findElement(By.className("a-modal-scroller"));
+            final WebElement noButton = aModalScrollerDiv.findElement(By.id("p2dPopoverID-no-button"));
+            noButton.click();
+        } catch (NoSuchElementException ignored) {
+            // It usually doesn't appear.
         }
     }
 
