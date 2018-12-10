@@ -164,6 +164,14 @@ public class AmazonKindle extends SiteScraper {
         // Navigate to the Amazon store page.
         getLogger().log(Level.INFO, "Processing book `" + bookId + "`.");
         driver.navigate().to(url);
+        // Ensure that the page is valid.
+        try {
+            // This element won't exist if the book URL is no longer valid (404 error).
+            driver.findElement(By.id("a-page"));
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.WARNING, "The Amazon page for book `" + bookId + "`. may no longer exist; started at `" + url + "`, ended at `" + driver.getCurrentUrl() + "`. Skipping.");
+            return;
+        }
         ensureKindleStorePage(driver);
         // Find the main container.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
