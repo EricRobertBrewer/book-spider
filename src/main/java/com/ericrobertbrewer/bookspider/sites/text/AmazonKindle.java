@@ -482,6 +482,12 @@ public class AmazonKindle extends SiteScraper {
         }
         // Find the main container.
         final WebElement bookContainerDiv = readerDriver.findElement(By.id("kindleReader_book_container"));
+        // Hide the app bars, if they are visible.
+        try {
+            final WebElement appBarOverlayDiv = bookContainerDiv.findElement(By.id("appBarOverlay"));
+            appBarOverlayDiv.click();
+        } catch (NoSuchElementException ignored) {
+        }
         // Find the navigation arrows.
         final WebElement touchLayerDiv;
         try {
