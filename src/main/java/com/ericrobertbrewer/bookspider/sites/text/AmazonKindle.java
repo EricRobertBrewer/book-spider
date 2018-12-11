@@ -267,7 +267,7 @@ public class AmazonKindle extends SiteScraper {
                 if (returnKindleUnlimitedBook(driver, title, email, password)) {
                     getLogger().log(Level.INFO, "Book `" + bookId + "` has been successfully returned through Kindle Unlimited.");
                 } else {
-                    getLogger().log(Level.WARNING, "Unable to return book `" + bookId + "` through Kindle Unlimited.");
+                    getLogger().log(Level.WARNING, "Unable to return book `" + bookId + "` with title `" + title + "` through Kindle Unlimited.");
                 }
             }
         }
@@ -299,13 +299,15 @@ public class AmazonKindle extends SiteScraper {
      * @param password      Password.
      */
     private void signIn(WebDriver driver, String email, String password) {
+        final WebElement aPageDiv = driver.findElement(By.id("a-page"));
+        final WebElement centerSectionDiv = aPageDiv.findElement(By.id("authportal-center-section"));
+        final WebElement mainSectionDiv = centerSectionDiv.findElement(By.id("authportal-main-section"));
         // Enter email.
         final WebElement emailInput;
         try {
-            emailInput = DriverUtils.findElementWithRetries(driver, By.id("ap_email"), 5, 2500L);
+            emailInput = DriverUtils.findElementWithRetries(mainSectionDiv, By.id("ap_email"), 5, 2500L);
         } catch (NoSuchElementException e) {
-            getLogger().log(Level.SEVERE, "Unable to find `ap_email` element while signing in. Quitting.");
-            driver.quit();
+            getLogger().log(Level.SEVERE, "Unable to find `ap_email` element in page at URL `" + driver.getCurrentUrl() + "` while signing in. Quitting.");
             return;
         }
         emailInput.click();
@@ -592,7 +594,7 @@ public class AmazonKindle extends SiteScraper {
             return;
         }
         if (!id.contains(":")) {
-            getLogger().log(Level.WARNING, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping");
+            getLogger().log(Level.WARNING, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
             return;
         }
         text.put(id, visibleText);
@@ -680,6 +682,7 @@ public class AmazonKindle extends SiteScraper {
     boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
         // Navigate to the 'Content and Devices' account page, showing only borrowed books.
         driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksBorrows/dateDsc/");
+        DriverUtils.sleep(1000L);
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement ngAppDiv;
         try {
