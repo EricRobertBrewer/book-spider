@@ -9,18 +9,14 @@ import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.FluentWait;
-import org.openqa.selenium.support.ui.Wait;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -73,7 +69,6 @@ public class AmazonKindle extends SiteScraper {
                 final WebDriver driver = factory.newInstance();
                 scrapeThreadsRunning.incrementAndGet();
                 ensureReaderIsSingleColumn(driver);
-                driver.manage().timeouts().implicitlyWait(1, TimeUnit.SECONDS);
                 // Start scraping.
                 scrapeBooks(queue, driver, contentFolder, email, password, maxRetries, force);
                 driver.quit();
@@ -303,20 +298,26 @@ public class AmazonKindle extends SiteScraper {
      * @param password      Password.
      */
     private void signIn(WebDriver driver, String email, String password) {
-        final WebElement mainSectionDiv = driver.findElement(By.id("authportal-main-section"));
         // Enter email.
-        final WebElement emailInput = mainSectionDiv.findElement(By.id("ap_email"));
+        final WebElement emailInput;
+        try {
+            emailInput = DriverUtils.findElementWithRetries(driver, By.id("ap_email"), 5, 2500L);
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.SEVERE, "Unable to find `ap_email` element while signing in. Quitting.");
+            driver.quit();
+            return;
+        }
         emailInput.click();
         emailInput.sendKeys(email);
         // Enter password.
-        final WebElement passwordInput = mainSectionDiv.findElement(By.id("ap_password"));
+        final WebElement passwordInput = driver.findElement(By.id("ap_password"));
         passwordInput.click();
         passwordInput.sendKeys(password);
         // Click 'Keep me logged in' to avoid being logged out.
-        final WebElement rememberMeSpan = mainSectionDiv.findElement(By.className("a-checkbox-label"));
+        final WebElement rememberMeSpan = driver.findElement(By.className("a-checkbox-label"));
         rememberMeSpan.click();
         // Submit.
-        final WebElement signInSubmitInput = mainSectionDiv.findElement(By.id("signInSubmit"));
+        final WebElement signInSubmitInput = driver.findElement(By.id("signInSubmit"));
         signInSubmitInput.click();
     }
 
@@ -435,7 +436,7 @@ public class AmazonKindle extends SiteScraper {
         int retries = maxRetries;
         while (retries > 1) {
             try {
-                collectContent(driver, asin, text, imgUrlToSrc, email, password, retries == maxRetries);
+                collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, retries == maxRetries);
                 if (text.size() > 0) {
                     return;
                 } else {
@@ -443,18 +444,33 @@ public class AmazonKindle extends SiteScraper {
                     // suppose that it is finished. In this case, pause, then try again.
                     getLogger().log(Level.WARNING, "`collectContent` for book `" + bookId + "` completed without failing or extracting any text. " + retries + " retries left. Pausing, then retrying...");
                 }
+            } catch (NoSuchElementException e) {
+                getLogger().log(Level.WARNING, "Unable to find unknown element for book `" + bookId + "`.");
             } catch (Throwable t) {
                 getLogger().log(Level.WARNING, "Encountered error while collecting content for book `" + bookId + "`. Retrying.", t);
             }
             retries--;
         }
         // Then fail the last time.
-        collectContent(driver, asin, text, imgUrlToSrc, email, password, false);
+        collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false);
     }
 
-    private void collectContent(WebDriver driver, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart) {
+    private void collectContent(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart) {
+        final WebElement kindleReaderContainerDiv;
+        try {
+            kindleReaderContainerDiv = DriverUtils.findElementWithRetries(driver, By.id("KindleReaderContainer"), 7, 2500L);
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.WARNING, "Unable to find `KindleReaderContainer` for book `" + bookId + "`.");
+            return;
+        }
         // Enter the first `iframe`.
-        final WebElement kindleReaderFrame = DriverUtils.findElementWithRetries(driver, By.id("KindleReaderIFrame"), 7, 2500L);
+        final WebElement kindleReaderFrame;
+        try {
+            kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainerDiv, By.id("KindleReaderIFrame"), 9, 2500L);
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.WARNING, "Unable to find `KindleReaderIFrame` for book `" + bookId + "`.");
+            return;
+        }
         final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
         // Close the 'Sync Position' dialog, if it's open.
         try {
@@ -467,7 +483,13 @@ public class AmazonKindle extends SiteScraper {
         // Find the main container.
         final WebElement bookContainerDiv = readerDriver.findElement(By.id("kindleReader_book_container"));
         // Find the navigation arrows.
-        final WebElement touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.id("kindleReader_touchLayer"), 3, 2500L);
+        final WebElement touchLayerDiv;
+        try {
+            touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.id("kindleReader_touchLayer"), 3, 2500L);
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.WARNING, "Unable to find `kindleReader_touchLayer` for book `" + bookId + "`.");
+            return;
+        }
         final WebElement sideMarginDiv = touchLayerDiv.findElement(By.id("kindleReader_sideMargin"));
         if (fromStart) {
             // Turn pages left as far as possible.
@@ -506,7 +528,7 @@ public class AmazonKindle extends SiteScraper {
                     // If so, sign in again and continue collecting content from the same position in the reader.
                     signIn(driver, email, password);
                     navigateToReaderPage(driver, asin);
-                    collectContent(driver, asin, text, imgUrlToSrc, email, password, false);
+                    collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false);
                 }
                 return;
             }
@@ -677,11 +699,7 @@ public class AmazonKindle extends SiteScraper {
             if (title.equalsIgnoreCase(titleText)) {
                 final WebElement button = li.findElement(By.tagName("button"));
                 button.click(); // [...]
-                final Wait<WebElement> wait = new FluentWait<>(li)
-                        .withTimeout(Duration.ofMillis(3000L))
-                        .pollingEvery(Duration.ofMillis(1000L))
-                        .ignoring(NoSuchElementException.class);
-                final WebElement returnLoanDiv = wait.until(e -> e.findElement(By.id("contentAction_returnLoan_myx")));
+                final WebElement returnLoanDiv = DriverUtils.findElementWithRetries(li, By.id("contentAction_returnLoan_myx"), 3, 2500L);
                 returnLoanDiv.click(); // [Return book]
                 final WebElement popoverModalDiv = driver.findElement(By.className("myx-popover-modal"));
                 final WebElement okButton = popoverModalDiv.findElement(By.id("dialogButton_ok_myx "));  // Apparently there is a space there!
