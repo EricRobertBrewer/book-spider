@@ -725,6 +725,8 @@ public class AmazonKindle extends SiteScraper {
         FORMATTING_TAGS.add("b");
         FORMATTING_TAGS.add("s");
         FORMATTING_TAGS.add("u");
+        FORMATTING_TAGS.add("sup");
+        FORMATTING_TAGS.add("sub");
         FORMATTING_TAGS.add("br");
     }
 
