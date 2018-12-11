@@ -74,8 +74,6 @@ public class AmazonKindle extends SiteScraper {
                 scrapeThreadsRunning.incrementAndGet();
                 ensureReaderIsSingleColumn(driver);
                 driver.manage().timeouts().implicitlyWait(1, TimeUnit.SECONDS);
-                navigateToSignInPage(driver);
-                signIn(driver, email, password);
                 // Start scraping.
                 scrapeBooks(queue, driver, contentFolder, email, password, maxRetries, force);
                 driver.quit();
@@ -94,37 +92,6 @@ public class AmazonKindle extends SiteScraper {
      */
     void ensureReaderIsSingleColumn(WebDriver driver) {
         driver.manage().window().setSize(new Dimension(719, 978));
-    }
-
-    void navigateToSignInPage(WebDriver driver) {
-        driver.navigate().to("https://www.amazon.com");
-        final WebElement signInA = driver.findElement(By.id("nav-link-accountList"));
-        signInA.click();
-    }
-
-    /**
-     * Sign in to Amazon.
-     * Works only if you have already navigated to the sign-in page (`https://www.amazon.com/ap/signin?...`).
-     * @param driver        The web driver.
-     * @param email         Email.
-     * @param password      Password.
-     */
-    void signIn(WebDriver driver, String email, String password) {
-        final WebElement mainSectionDiv = driver.findElement(By.id("authportal-main-section"));
-        // Enter email.
-        final WebElement emailInput = mainSectionDiv.findElement(By.id("ap_email"));
-        emailInput.click();
-        emailInput.sendKeys(email);
-        // Enter password.
-        final WebElement passwordInput = mainSectionDiv.findElement(By.id("ap_password"));
-        passwordInput.click();
-        passwordInput.sendKeys(password);
-        // Click 'Keep me logged in' to avoid being logged out.
-        final WebElement rememberMeSpan = mainSectionDiv.findElement(By.className("a-checkbox-label"));
-        rememberMeSpan.click();
-        // Submit.
-        final WebElement signInSubmitInput = mainSectionDiv.findElement(By.id("signInSubmit"));
-        signInSubmitInput.click();
     }
 
     private void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, int maxRetries, boolean force) {
@@ -154,6 +121,7 @@ public class AmazonKindle extends SiteScraper {
             // Try scraping the text for this book.
             for (String url : bookScrapeInfo.urls) {
                 try {
+                    getLogger().log(Level.INFO, "Processing book `" + bookScrapeInfo.id + "` using URL `" + url + "`.");
                     scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, textFile, email, password, maxRetries);
                     break;
                 } catch (NoSuchElementException e) {
@@ -198,7 +166,6 @@ public class AmazonKindle extends SiteScraper {
 
     private void scrapeBook(String bookId, String url, WebDriver driver, File bookFolder, File textFile, String email, String password, int maxRetries) throws IOException {
         // Navigate to the Amazon store page.
-        getLogger().log(Level.INFO, "Processing book `" + bookId + "`.");
         driver.navigate().to(url);
         // Ensure that the page is valid.
         try {
@@ -206,6 +173,12 @@ public class AmazonKindle extends SiteScraper {
             driver.findElement(By.id("a-page"));
         } catch (NoSuchElementException e) {
             getLogger().log(Level.WARNING, "The Amazon page for book `" + bookId + "`. may no longer exist; started at `" + url + "`, ended at `" + driver.getCurrentUrl() + "`. Skipping.");
+            return;
+        }
+        if (!isSignedIn(driver)) {
+            navigateToSignInPage(driver);
+            signIn(driver, email, password);
+            scrapeBook(bookId, url, driver, bookFolder, textFile, email, password, maxRetries);
             return;
         }
         // Close the "Read this book for free with Kindle Unlimited" popover, if it appears.
@@ -304,6 +277,59 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
+    private boolean isSignedIn(WebDriver driver) {
+        final WebElement navbarDiv = driver.findElement(By.id("navbar"));
+        final WebElement signInA = navbarDiv.findElement(By.id("nav-link-accountList"));
+        final String aText = signInA.getText().trim();
+        return !aText.startsWith("Hello. Sign in");
+    }
+
+    /**
+     * Only works when called from Amazon store page.
+     * @param driver        The web driver.
+     */
+    private void navigateToSignInPage(WebDriver driver) {
+        final WebElement navbarDiv = driver.findElement(By.id("navbar"));
+        final WebElement signInA = navbarDiv.findElement(By.id("nav-link-accountList"));
+        final String href = signInA.getAttribute("href").trim();
+        driver.navigate().to(href);
+    }
+
+    /**
+     * Sign in to Amazon.
+     * Works only if you have already navigated to the sign-in page (`https://www.amazon.com/ap/signin?...`).
+     * @param driver        The web driver.
+     * @param email         Email.
+     * @param password      Password.
+     */
+    private void signIn(WebDriver driver, String email, String password) {
+        final WebElement mainSectionDiv = driver.findElement(By.id("authportal-main-section"));
+        // Enter email.
+        final WebElement emailInput = mainSectionDiv.findElement(By.id("ap_email"));
+        emailInput.click();
+        emailInput.sendKeys(email);
+        // Enter password.
+        final WebElement passwordInput = mainSectionDiv.findElement(By.id("ap_password"));
+        passwordInput.click();
+        passwordInput.sendKeys(password);
+        // Click 'Keep me logged in' to avoid being logged out.
+        final WebElement rememberMeSpan = mainSectionDiv.findElement(By.className("a-checkbox-label"));
+        rememberMeSpan.click();
+        // Submit.
+        final WebElement signInSubmitInput = mainSectionDiv.findElement(By.id("signInSubmit"));
+        signInSubmitInput.click();
+    }
+
+    private void closeKindleUnlimitedPopoverIfVisible(WebDriver driver) {
+        try {
+            final WebElement aModalScrollerDiv = driver.findElement(By.className("a-modal-scroller"));
+            final WebElement noButton = aModalScrollerDiv.findElement(By.id("p2dPopoverID-no-button"));
+            noButton.click();
+        } catch (NoSuchElementException ignored) {
+            // It usually doesn't appear.
+        }
+    }
+
     /**
      * Ensure that we're looking at the Kindle store page, not the paperback store page.
      * For example, `https://mybookcave.com/t/?u=0&b=94037&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website`.
@@ -331,21 +357,11 @@ public class AmazonKindle extends SiteScraper {
                 // The 'Kindle' media item is unselected. We're probably looking at the wrong store page.
                 final WebElement a = li.findElement(By.tagName("a"));
                 // Navigate to the Kindle store page.
-                final String href = a.getAttribute("href");
+                final String href = a.getAttribute("href").trim();
                 driver.navigate().to(href);
             }
             // Whether we've navigated to the Kindle store page or we're already there, stop looking for the 'Kindle' item.
             return;
-        }
-    }
-
-    private void closeKindleUnlimitedPopoverIfVisible(WebDriver driver) {
-        try {
-            final WebElement aModalScrollerDiv = driver.findElement(By.className("a-modal-scroller"));
-            final WebElement noButton = aModalScrollerDiv.findElement(By.id("p2dPopoverID-no-button"));
-            noButton.click();
-        } catch (NoSuchElementException ignored) {
-            // It usually doesn't appear.
         }
     }
 
