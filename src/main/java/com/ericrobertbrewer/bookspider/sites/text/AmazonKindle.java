@@ -591,11 +591,6 @@ public class AmazonKindle extends SiteScraper {
     }
 
     private void saveImage(File bookFolder, String url, String src) throws IOException {
-        final File imageFile = new File(bookFolder, url);
-        // Check if image file already exists.
-        if (imageFile.exists()) {
-            return;
-        }
         // Ensure that the `src` attribute is a data URI.
         // See `https://en.wikipedia.org/wiki/Data_URI_scheme#Syntax`.
         if (!src.startsWith("data:")) {
@@ -608,9 +603,33 @@ public class AmazonKindle extends SiteScraper {
         }
         final String meta = src.substring(5, comma);
         final String data = src.substring(comma + 1);
-        // Retrieve the meta data.
+        // Retrieve the MIME type.
         final String[] metaParts = meta.split(";");
         final String mimeType = metaParts[0];
+        // Ensure proper file extension.
+        final String fileName;
+        if (url.contains(".")) {
+            fileName = url;
+        } else if ("image/jpeg".equalsIgnoreCase(mimeType) || "image/jpg".equals(mimeType)) {
+            fileName = url + ".jpg";
+        } else if ("image/png".equalsIgnoreCase(mimeType)) {
+            fileName = url + ".png";
+        } else if ("image/gif".equalsIgnoreCase(mimeType)) {
+            fileName = url + ".gif";
+        } else if ("image/svg+xml".equalsIgnoreCase(mimeType)) {
+            fileName = url + ".svg";
+        } else if ("image/bmp".equalsIgnoreCase(mimeType)) {
+            fileName = url + ".bmp";
+        } else {
+            getLogger().log(Level.WARNING, "Found unknown MIME type `" + mimeType + "` for image `" + url + "` for book `" + bookFolder.getName() + "`.");
+            fileName = url;
+        }
+        final File imageFile = new File(bookFolder, fileName);
+        // Check if image file already exists.
+        if (imageFile.exists()) {
+            return;
+        }
+        // Retrieve the other meta data.
         String charset = "utf-8";
         boolean isBase64 = false;
         for (int i = 1; i < metaParts.length; i++) {
@@ -621,9 +640,10 @@ public class AmazonKindle extends SiteScraper {
             }
         }
         if (isBase64) {
-            final byte[] bytes = Base64.getDecoder().decode(data);
+            final byte[] inBytes = data.getBytes(charset);
+            final byte[] outBytes = Base64.getDecoder().decode(inBytes);
             final FileOutputStream out = new FileOutputStream(imageFile);
-            out.write(bytes);
+            out.write(outBytes);
         }
     }
 
