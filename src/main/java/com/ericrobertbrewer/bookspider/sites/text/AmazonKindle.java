@@ -111,20 +111,19 @@ public class AmazonKindle extends SiteScraper {
      */
     void signIn(WebDriver driver, String email, String password) {
         final WebElement mainSectionDiv = driver.findElement(By.id("authportal-main-section"));
-        final WebElement form = mainSectionDiv.findElement(By.tagName("form"));
         // Enter email.
-        final WebElement emailInput = form.findElement(By.id("ap_email"));
+        final WebElement emailInput = mainSectionDiv.findElement(By.id("ap_email"));
         emailInput.click();
         emailInput.sendKeys(email);
         // Enter password.
-        final WebElement passwordInput = form.findElement(By.id("ap_password"));
+        final WebElement passwordInput = mainSectionDiv.findElement(By.id("ap_password"));
         passwordInput.click();
         passwordInput.sendKeys(password);
         // Click 'Keep me logged in' to avoid being logged out.
-        final WebElement rememberMeSpan = form.findElement(By.className("a-checkbox-label"));
+        final WebElement rememberMeSpan = mainSectionDiv.findElement(By.className("a-checkbox-label"));
         rememberMeSpan.click();
         // Submit.
-        final WebElement signInSubmitInput = form.findElement(By.id("signInSubmit"));
+        final WebElement signInSubmitInput = mainSectionDiv.findElement(By.id("signInSubmit"));
         signInSubmitInput.click();
     }
 
