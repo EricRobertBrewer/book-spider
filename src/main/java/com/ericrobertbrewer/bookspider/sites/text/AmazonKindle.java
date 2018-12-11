@@ -247,6 +247,7 @@ public class AmazonKindle extends SiteScraper {
         final Map<String, String> imgUrlToSrc = new HashMap<>();
         try {
             navigateToReaderPage(driver, asin);
+            DriverUtils.sleep(10000L);
             collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, maxRetries);
             // Check whether any content has been extracted.
             if (text.size() > 0) {
@@ -534,6 +535,7 @@ public class AmazonKindle extends SiteScraper {
                     // If so, sign in again and continue collecting content from the same position in the reader.
                     signIn(driver, email, password);
                     navigateToReaderPage(driver, asin);
+                    DriverUtils.sleep(10000L);
                     collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false);
                 }
                 return;
