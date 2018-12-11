@@ -58,6 +58,7 @@ public class AmazonKindle extends SiteScraper {
             force = false;
         }
         // Create thread-safe queue.
+        Collections.shuffle(bookScrapeInfos);
         final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
         // Start scraping.
         scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, maxRetries, force, callback);
