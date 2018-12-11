@@ -438,8 +438,8 @@ public class AmazonKindle extends SiteScraper {
 
     private void collectContent(WebDriver driver, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart) {
         // Enter the first `iframe`.
-        final WebDriverWait frameWait = new WebDriverWait(driver, 20);
-        final WebDriver readerDriver = frameWait.until(ExpectedConditions.frameToBeAvailableAndSwitchToIt(By.id("KindleReaderIFrame")));
+        final WebElement kindleReaderFrame = DriverUtils.findElementWithRetries(driver, By.id("KindleReaderIFrame"), 7, 2500L);
+        final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
         // Close the 'Sync Position' dialog, if it's open.
         try {
             final WebElement syncPositionDiv = readerDriver.findElement(By.id("kindleReader_dialog_syncPosition"));
