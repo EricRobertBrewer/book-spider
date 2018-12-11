@@ -498,6 +498,11 @@ public class AmazonKindle extends SiteScraper {
     }
 
     private void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc) {
+        // Check whether this textual element has already been scraped.
+        final String id = element.getAttribute("id");
+        if (text.containsKey(id)) {
+            return;
+        }
         // Ignore hidden elements.
         final String visibility = element.getCssValue("visibility");
         if ("hidden".equals(visibility)) {
@@ -506,11 +511,6 @@ public class AmazonKindle extends SiteScraper {
         // Ignore elements which are not displayed.
         final String display = element.getCssValue("display");
         if ("none".equals(display)) {
-            return;
-        }
-        // Check whether this textual element has already been scraped.
-        final String id = element.getAttribute("id");
-        if (text.containsKey(id)) {
             return;
         }
         // Return the visible text of all relevant children, if any exist.
