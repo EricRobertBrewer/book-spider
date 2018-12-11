@@ -545,14 +545,18 @@ public class AmazonKindle extends SiteScraper {
         if (visibleText.isEmpty()) {
             return;
         }
+        if (!id.contains(":")) {
+            getLogger().log(Level.WARNING, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping");
+            return;
+        }
         text.put(id, visibleText);
     }
 
     private void writeBook(File file, Map<String, String> text) throws IOException {
-        final PrintStream out = new PrintStream(file);
         final String[] ids = new ArrayList<>(text.keySet()).stream()
                 .sorted(TEXT_ID_COMPARATOR)
                 .toArray(String[]::new);
+        final PrintStream out = new PrintStream(file);
         for (String id : ids) {
             final String line = text.get(id);
             out.println(line);
@@ -660,6 +664,7 @@ public class AmazonKindle extends SiteScraper {
         FORMATTING_TAGS.add("i");
         FORMATTING_TAGS.add("b");
         FORMATTING_TAGS.add("s");
+        FORMATTING_TAGS.add("br");
     }
 
     private static boolean areAllFormatting(List<WebElement> elements) {
