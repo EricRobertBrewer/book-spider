@@ -37,8 +37,8 @@ public class AmazonKindle extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
-        if (args.length < 2 || args.length > 4) {
-            throw new IllegalArgumentException("Usage: <email> <password> [threads] [force]");
+        if (args.length < 2 || args.length > 5) {
+            throw new IllegalArgumentException("Usage: <email> <password> [threads] [max-retries] [force]");
         }
         // Collect arguments.
         final String email = args[0];
@@ -49,19 +49,25 @@ public class AmazonKindle extends SiteScraper {
         } else {
             threads = 1;
         }
-        final boolean force;
+        final int maxRetries;
         if (args.length > 3) {
-            force = Boolean.parseBoolean(args[3]);
+            maxRetries = Integer.parseInt(args[3]);
+        } else {
+            maxRetries = 1;
+        }
+        final boolean force;
+        if (args.length > 4) {
+            force = Boolean.parseBoolean(args[4]);
         } else {
             force = false;
         }
         // Create thread-safe queue.
         final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
         // Start scraping.
-        scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, force, callback);
+        scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, maxRetries, force, callback);
     }
 
-    private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue, int threads, WebDriverFactory factory, File contentFolder, String email, String password, boolean force, Launcher.Callback callback) {
+    private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue, int threads, WebDriverFactory factory, File contentFolder, String email, String password, int maxRetries, boolean force, Launcher.Callback callback) {
         for (int i = 0; i < threads; i++) {
             final Thread scrapeThread = new Thread(() -> {
                 final WebDriver driver = factory.newInstance();
@@ -71,7 +77,7 @@ public class AmazonKindle extends SiteScraper {
                 navigateToSignInPage(driver);
                 signIn(driver, email, password);
                 // Start scraping.
-                scrapeBooks(queue, driver, contentFolder, email, password, force);
+                scrapeBooks(queue, driver, contentFolder, email, password, maxRetries, force);
                 driver.quit();
                 // Finish.
                 if (scrapeThreadsRunning.decrementAndGet() == 0) {
@@ -122,7 +128,7 @@ public class AmazonKindle extends SiteScraper {
         signInSubmitInput.click();
     }
 
-    private void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, boolean force) {
+    private void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, int maxRetries, boolean force) {
         while (!queue.isEmpty()) {
             // Pull the next book off of the queue.
             final BookScrapeInfo bookScrapeInfo = queue.poll();
@@ -149,7 +155,7 @@ public class AmazonKindle extends SiteScraper {
             // Try scraping the text for this book.
             for (String url : bookScrapeInfo.urls) {
                 try {
-                    scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, textFile, email, password);
+                    scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, textFile, email, password, maxRetries);
                     break;
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
@@ -191,7 +197,7 @@ public class AmazonKindle extends SiteScraper {
         return file;
     }
 
-    private void scrapeBook(String bookId, String url, WebDriver driver, File bookFolder, File textFile, String email, String password) throws IOException {
+    private void scrapeBook(String bookId, String url, WebDriver driver, File bookFolder, File textFile, String email, String password, int maxRetries) throws IOException {
         // Navigate to the Amazon store page.
         getLogger().log(Level.INFO, "Processing book `" + bookId + "`.");
         driver.navigate().to(url);
@@ -271,17 +277,19 @@ public class AmazonKindle extends SiteScraper {
         getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`");
         final Map<String, String> text = new HashMap<>();
         final Map<String, String> imgUrlToSrc = new HashMap<>();
-        navigateToReaderPage(driver, asin);
         try {
-            collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, 5);
+            navigateToReaderPage(driver, asin);
+            collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, maxRetries);
             // Check whether any content has been extracted.
             if (text.size() > 0) {
                 // Persist content once it has been totally collected.
+                getLogger().log(Level.INFO, "Writing text for book `" + bookId + "`.");
                 writeBook(textFile, text);
+                getLogger().log(Level.INFO, "Saving images for book `" + bookId + "`.");
                 saveImages(bookFolder, imgUrlToSrc);
                 getLogger().log(Level.INFO, "Successfully collected and saved content for book `" + bookId + "`.");
             } else {
-                getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "` after retries. Quitting.");
+                getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "` after " + maxRetries + " retries. Quitting.");
             }
         } finally {
             // Return this book to avoid reaching the 10-book limit for Kindle Unlimited.
