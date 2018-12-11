@@ -330,8 +330,9 @@ public class AmazonKindle extends SiteScraper {
             if (className.contains("unselected")) {
                 // The 'Kindle' media item is unselected. We're probably looking at the wrong store page.
                 final WebElement a = li.findElement(By.tagName("a"));
-                // Click the media item. This will navigate to the Kindle store page.
-                a.click();
+                // Navigate to the Kindle store page.
+                final String href = a.getAttribute("href");
+                driver.navigate().to(href);
             }
             // Whether we've navigated to the Kindle store page or we're already there, stop looking for the 'Kindle' item.
             return;
