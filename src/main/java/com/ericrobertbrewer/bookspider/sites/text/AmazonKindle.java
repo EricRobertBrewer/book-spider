@@ -198,7 +198,7 @@ public class AmazonKindle extends SiteScraper {
         // Get this book's Amazon ID.
         // For example: `B07JK9Z14K`.
         // Used as: `https://read.amazon.com/?asin=<AMAZON_ID>`.
-        final String asin = findAmazonId(driver);
+        final String asin = getAmazonId(driver);
         if (asin == null) {
             getLogger().log(Level.SEVERE, "Unable to find Amazon ID for book `" + bookId + "` within URL `" + url + "`. Skipping.");
             return;
@@ -366,7 +366,7 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private String findAmazonId(WebDriver driver) {
+    private String getAmazonId(WebDriver driver) {
         final String url = driver.getCurrentUrl();
         final String[] components = url.split("[/?]");
         for (int i = 0; i < components.length - 1; i++) {
