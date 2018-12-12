@@ -178,20 +178,21 @@ public class AmazonKindle extends SiteScraper {
         // Close the "Read this book for free with Kindle Unlimited" popover, if it appears.
         // See `https://www.amazon.com/dp/1980537615`.
         closeKindleUnlimitedPopoverIfVisible(driver);
+        // Check the layout type for this book.
+        final LayoutType layoutType = getStorePageLayoutType(driver);
+        if (layoutType == LayoutType.UNKNOWN) {
+            getLogger().log(Level.SEVERE, "Found unknown store page layout type for book `" + bookId + "`. Quitting.");
+            return;
+        }
         // Ensure that we have navigated to the Amazon store page for the Kindle version of the book.
-        ensureKindleStorePage(driver);
+        ensureKindleStorePage(driver, layoutType);
         // Find the main container.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
         final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
         // Get this book's title. This may be used later to return a book borrowed through Kindle Unlimited.
-        final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
-        final String title;
-        try {
-            final WebElement booksTitleDiv = centerColDiv.findElement(By.id("booksTitle"));
-            final WebElement ebooksProductTitle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
-            title = ebooksProductTitle.getText().trim();
-        } catch (NoSuchElementException e) {
+        final String title = getBookTitle(dpContainerDiv, layoutType);
+        if (title == null) {
             getLogger().log(Level.WARNING, "Unable to find book title for `" + bookId + "`. Perhaps the paperback product page is shown instead of Kindle? Skipping.");
             return;
         }
@@ -204,48 +205,47 @@ public class AmazonKindle extends SiteScraper {
             return;
         }
         // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
+        final PurchaseType purchaseType = getPurchaseType(dpContainerDiv, layoutType);
         final boolean isKindleUnlimited;
-        final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
-        final WebElement buyboxDiv = rightColDiv.findElement(By.id("buybox"));
-        if (isBookOwned(buyboxDiv)) {
-            getLogger().log(Level.INFO, "Book `" + bookId + "` already owned. Navigating...");
-            isKindleUnlimited = false;
-        } else if (isBookBorrowedThroughKindleUnlimited(buyboxDiv)) {
-            getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Amazon Kindle. Navigating...");
-            isKindleUnlimited = true;
-        } else if (canBorrowBookThroughKindleUnlimited(buyboxDiv)) {
-            // Click 'Read for Free'
-            final WebElement borrowButton = buyboxDiv.findElement(By.id("borrow-button"));
-            borrowButton.click();
-            try {
-                // Check if the borrowing was successful.
-                DriverUtils.findElementWithRetries(driver, By.id("dbs-readnow-bookstore-rw"), 3, 2500L);
+        switch (purchaseType) {
+            case PURCHASE_OWNED:
+                getLogger().log(Level.INFO, "Book `" + bookId + "` already owned. Navigating...");
+                isKindleUnlimited = false;
+                break;
+            case KINDLE_UNLIMITED_BORROWED:
+                getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Amazon Kindle. Navigating...");
+                isKindleUnlimited = true;
+                break;
+            case KINDLE_UNLIMITED_AVAILABLE:
+                // Click 'Read for Free'
+                try {
+                    // Check if the borrowing was successful.
+                    borrowBookThroughKindleUnlimited(driver, dpContainerDiv, layoutType);
+                } catch (NoSuchElementException e) {
+                    // We were unable to borrow the book. Probably the 10-book limit is met.
+                    getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
+                    return;
+                }
                 getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
-            } catch (NoSuchElementException e) {
-                // We were unable to borrow the book. Probably the 10-book limit is met.
-                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
+                isKindleUnlimited = true;
+                break;
+            case PURCHASE_AVAILABLE_FREE:
+                getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
+                // "Purchase" the book.
+                purchaseBook(dpContainerDiv, layoutType);
+                // Since it's not part of the Kindle Unlimited collection, it does not have to be returned.
+                isKindleUnlimited = false;
+                break;
+            case PURCHASE_AVAILABLE:
+            default:
+                getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
                 return;
-            }
-            isKindleUnlimited = true;
-        } else if (isBookFree(buyboxDiv)) {
-            getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
-            // "Purchase" the book.
-            final WebElement buyOneClickForm = buyboxDiv.findElement(By.id("buyOneClick"));
-            final WebElement checkoutButtonIdSpan = buyOneClickForm.findElement(By.id("checkoutButtonId"));
-            checkoutButtonIdSpan.click();
-            // Since it's not part of the Kindle Unlimited collection, it does not have to be returned.
-            isKindleUnlimited = false;
-        } else {
-            getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
-            return;
         }
         // Start collecting content.
         getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`");
         final Map<String, String> text = new HashMap<>();
         final Map<String, String> imgUrlToSrc = new HashMap<>();
         try {
-            navigateToReaderPage(driver, asin);
-            DriverUtils.sleep(10000L);
             collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, maxRetries);
             // Check whether any content has been extracted.
             if (text.size() > 0) {
@@ -331,39 +331,113 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
+    private enum LayoutType {
+        /**
+         * Placeholder for store page layouts containing unrecognized elements.
+         */
+        UNKNOWN,
+        /**
+         * The standard store layout type. Almost all books follow this layout format.
+         */
+        COLUMNS,
+        /**
+         * A less-common store layout type using tabs. This layout type usually contains many different media options.
+         * See `https://www.amazon.com/dp/B007OUUDVK`.
+         */
+        TABS
+        // TODO: Handle the layout type for 'Pride & Prejudice': `https://www.amazon.com/dp/B008476HBM`.
+    }
+
+    private LayoutType getStorePageLayoutType(WebDriver driver) {
+        final WebElement aPageDiv = driver.findElement(By.id("a-page"));
+        final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
+        final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
+        try {
+            dpContainerDiv.findElement(By.id("centerCol"));
+            return LayoutType.COLUMNS;
+        } catch (NoSuchElementException e) {
+            try {
+                dpContainerDiv.findElement(By.id("ppdFixedGridRightColumn"));
+                return LayoutType.TABS;
+            } catch (NoSuchElementException ignored) {
+            }
+        }
+        return LayoutType.UNKNOWN;
+    }
+
     /**
      * Ensure that we're looking at the Kindle store page, not the paperback store page.
      * For example, `https://mybookcave.com/t/?u=0&b=94037&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website`.
      * This may cause the driver to navigate to a different page.
      * To avoid `StaleElementReferenceException`s, invoke this method before finding elements via the web driver.
      * @param driver        The web driver.
+     * @param layoutType    The layout type of the Amazon store page.
      */
-    private void ensureKindleStorePage(WebDriver driver) {
+    private void ensureKindleStorePage(WebDriver driver, LayoutType layoutType) {
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
         final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
-        final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
-        final WebElement mediaMatrixDiv = centerColDiv.findElement(By.id("MediaMatrix"));
-        final WebElement formatsDiv = mediaMatrixDiv.findElement(By.id("formats"));
-        final WebElement tmmSwatchesDiv = formatsDiv.findElement(By.id("tmmSwatches"));
-        final WebElement ul = tmmSwatchesDiv.findElement(By.tagName("ul"));
-        final List<WebElement> lis = ul.findElements(By.tagName("li"));
-        for (WebElement li : lis) {
-            final String text = li.getText().trim();
-            if (!text.startsWith("Kindle")) {
-                continue;
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
+            final WebElement mediaMatrixDiv = centerColDiv.findElement(By.id("MediaMatrix"));
+            final WebElement formatsDiv = mediaMatrixDiv.findElement(By.id("formats"));
+            final WebElement tmmSwatchesDiv = formatsDiv.findElement(By.id("tmmSwatches"));
+            final WebElement ul = tmmSwatchesDiv.findElement(By.tagName("ul"));
+            final List<WebElement> lis = ul.findElements(By.tagName("li"));
+            for (WebElement li : lis) {
+                final String text = li.getText().trim();
+                if (!text.startsWith("Kindle")) {
+                    continue;
+                }
+                final String className = li.getAttribute("class");
+                if (className.contains("unselected")) {
+                    // The 'Kindle' media item is unselected. We're probably looking at the wrong store page.
+                    final WebElement a = li.findElement(By.tagName("a"));
+                    // Navigate to the Kindle store page.
+                    final String href = a.getAttribute("href").trim();
+                    driver.navigate().to(href);
+                }
+                // Whether we've navigated to the Kindle store page or we're already there, stop looking for the 'Kindle' item.
+                return;
             }
-            final String className = li.getAttribute("class");
-            if (className.contains("unselected")) {
-                // The 'Kindle' media item is unselected. We're probably looking at the wrong store page.
-                final WebElement a = li.findElement(By.tagName("a"));
-                // Navigate to the Kindle store page.
-                final String href = a.getAttribute("href").trim();
-                driver.navigate().to(href);
+        } else if (layoutType == LayoutType.TABS) {
+            final WebElement ppdFixedGridRightColumnDiv = dpContainerDiv.findElement(By.id("ppdFixedGridRightColumn"));
+            final WebElement tabSetContainer = ppdFixedGridRightColumnDiv.findElement(By.id("mediaTabs_tabSetContainer"));
+            final WebElement headings = tabSetContainer.findElement(By.id("mediaTabsHeadings"));
+            final WebElement tabSet = headings.findElement(By.id("mediaTabs_tabSet"));
+            final List<WebElement> lis = tabSet.findElements(By.tagName("li"));
+            for (WebElement li : lis) {
+                final String text = li.getText().trim();
+                if (!text.startsWith("Kindle")) {
+                    continue;
+                }
+                final String className = li.getAttribute("class");
+                if (!className.contains("a-active")) {
+                    // The 'Kindle' tab is unselected.
+                    final WebElement a = li.findElement(By.tagName("a"));
+                    // Navigate to the Kindle store page.
+                    final String href = a.getAttribute("href").trim();
+                    driver.navigate().to(href);
+                }
+                return;
             }
-            // Whether we've navigated to the Kindle store page or we're already there, stop looking for the 'Kindle' item.
-            return;
         }
+    }
+
+    private String getBookTitle(WebElement dpContainerDiv, LayoutType layoutType) {
+        final WebElement booksTitleDiv;
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
+            booksTitleDiv = centerColDiv.findElement(By.id("booksTitle"));
+        } else {
+            booksTitleDiv = dpContainerDiv.findElement(By.id("booksTitle"));
+        }
+        try {
+            final WebElement ebooksProductTitle = booksTitleDiv.findElement(By.id("ebooksProductTitle"));
+            return ebooksProductTitle.getText().trim();
+        } catch (NoSuchElementException ignored) {
+        }
+        return null;
     }
 
     private String getAmazonId(WebDriver driver) {
@@ -377,10 +451,42 @@ public class AmazonKindle extends SiteScraper {
         return null;
     }
 
-    private boolean isBookOwned(WebElement buyboxDiv) {
+    private enum PurchaseType {
+        KINDLE_UNLIMITED_AVAILABLE,
+        KINDLE_UNLIMITED_BORROWED,
+        PURCHASE_AVAILABLE,
+        PURCHASE_AVAILABLE_FREE,
+        PURCHASE_OWNED
+    }
+
+    private PurchaseType getPurchaseType(WebElement dpContainerDiv, LayoutType layoutType) {
+        if (isBookOwned(dpContainerDiv, layoutType)) {
+            return PurchaseType.PURCHASE_OWNED;
+        } else if (isBookBorrowedThroughKindleUnlimited(dpContainerDiv, layoutType)) {
+            return PurchaseType.KINDLE_UNLIMITED_BORROWED;
+        } else if (canBorrowBookThroughKindleUnlimited(dpContainerDiv, layoutType)) {
+            return PurchaseType.KINDLE_UNLIMITED_AVAILABLE;
+        } else if (isBookFree(dpContainerDiv, layoutType)) {
+            return PurchaseType.PURCHASE_AVAILABLE_FREE;
+        }
+        return PurchaseType.PURCHASE_AVAILABLE;
+    }
+
+    private WebElement findBuyboxDiv(WebElement dpContainerDiv) {
+        final WebElement rightColDiv = dpContainerDiv.findElement(By.id("rightCol"));
+        return rightColDiv.findElement(By.id("buybox"));
+    }
+
+    private boolean isBookOwned(WebElement dpContainerDiv, LayoutType layoutType) {
         try {
             // Check if the book has already been purchased.
-            final WebElement readNowDescriptionTextSpan = buyboxDiv.findElement(By.id("read-now-description-text"));
+            final WebElement readNowDescriptionTextSpan;
+            if (layoutType == LayoutType.COLUMNS) {
+                final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+                readNowDescriptionTextSpan = buyboxDiv.findElement(By.id("read-now-description-text"));
+            } else {
+                readNowDescriptionTextSpan = dpContainerDiv.findElement(By.id("read-now-description-text"));
+            }
             final String readNowDescriptionText = readNowDescriptionTextSpan.getText().trim();
             return readNowDescriptionText.startsWith("You already own this item");
         } catch (NoSuchElementException ignored) {
@@ -388,10 +494,16 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private boolean isBookBorrowedThroughKindleUnlimited(WebElement buyboxDiv) {
+    private boolean isBookBorrowedThroughKindleUnlimited(WebElement dpContainerDiv, LayoutType layoutType) {
         try {
             // Check if the book has already been acquired through Kindle Unlimited.
-            final WebElement readNowDescriptionTextSpan = buyboxDiv.findElement(By.id("read-now-description-text"));
+            final WebElement readNowDescriptionTextSpan;
+            if (layoutType == LayoutType.COLUMNS) {
+                final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+                readNowDescriptionTextSpan = buyboxDiv.findElement(By.id("read-now-description-text"));
+            } else {
+                readNowDescriptionTextSpan = dpContainerDiv.findElement(By.id("read-now-description-text"));
+            }
             final String readNowDescriptionText = readNowDescriptionTextSpan.getText().trim();
             return readNowDescriptionText.startsWith("You already borrowed this item");
         } catch (NoSuchElementException ignored) {
@@ -399,34 +511,71 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private boolean canBorrowBookThroughKindleUnlimited(WebElement buyboxDiv) {
+    private boolean canBorrowBookThroughKindleUnlimited(WebElement dpContainerDiv, LayoutType layoutType) {
         try {
             // Check if the book is available through Kindle Unlimited.
-            buyboxDiv.findElement(By.id("borrow-button"));
+            if (layoutType == LayoutType.COLUMNS) {
+                final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+                buyboxDiv.findElement(By.id("borrow-button"));
+            } else {
+                dpContainerDiv.findElement(By.id("borrow-button"));
+            }
             return true;
         } catch (NoSuchElementException ignored) {
         }
         return false;
     }
 
-    private boolean isBookFree(WebElement buyboxDiv) {
-        final WebElement buyTable = buyboxDiv.findElement(By.tagName("table"));
-        final List<WebElement> trs = buyTable.findElements(By.tagName("tr"));
-        for (WebElement tr : trs) {
-            final List<WebElement> tds = tr.findElements(By.tagName("td"));
-            if (tds.size() < 2) {
-                continue;
+    private void borrowBookThroughKindleUnlimited(WebDriver driver, WebElement dpContainerDiv, LayoutType layoutType) {
+        final WebElement borrowButton;
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+            borrowButton = buyboxDiv.findElement(By.id("borrow-button"));
+        } else {
+            borrowButton = dpContainerDiv.findElement(By.id("borrow-button"));
+        }
+        borrowButton.click();
+        // Check if the borrowing was successful.
+        DriverUtils.findElementWithRetries(driver, By.id("dbs-readnow-bookstore-rw"), 3, 2500L);
+    }
+
+    private boolean isBookFree(WebElement dpContainerDiv, LayoutType layoutType) {
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+            final WebElement buyTable = buyboxDiv.findElement(By.tagName("table"));
+            final List<WebElement> trs = buyTable.findElements(By.tagName("tr"));
+            for (WebElement tr : trs) {
+                final List<WebElement> tds = tr.findElements(By.tagName("td"));
+                if (tds.size() < 2) {
+                    continue;
+                }
+                final String td0Text = tds.get(0).getText().trim();
+                if (!"Kindle Price:".equalsIgnoreCase(td0Text)) {
+                    continue;
+                }
+                final String td1Text = tds.get(1).getText().trim();
+                return td1Text.startsWith("$0.00");
             }
-            final String td0Text = tds.get(0).getText().trim();
-            if (!"Kindle Price:".equalsIgnoreCase(td0Text)) {
-                continue;
-            }
-            final String td1Text = tds.get(1).getText().trim();
-            return td1Text.startsWith("$0.00");
+        } else if (layoutType == LayoutType.TABS) {
+            final WebElement contentLandingDiv = dpContainerDiv.findElement(By.id("mediaTab_content_landing"));
+            final WebElement mediaNoAccordionDiv = contentLandingDiv.findElement(By.id("mediaNoAccordion"));
+            final WebElement priceSpan = mediaNoAccordionDiv.findElement(By.className("header-price"));
+            final String priceText = priceSpan.getText().trim();
+            return priceText.startsWith("$0.00");
         }
         return false;
     }
 
+    private void purchaseBook(WebElement dpContainerDiv, LayoutType layoutType) {
+        final WebElement buyOneClickForm;
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+            buyOneClickForm = buyboxDiv.findElement(By.id("buyOneClick"));
+        } else {
+            buyOneClickForm = dpContainerDiv.findElement(By.id("buyOneClick"));
+        }
+        final WebElement checkoutButtonIdSpan = buyOneClickForm.findElement(By.id("checkoutButtonId"));
+        checkoutButtonIdSpan.click();
     }
 
     private void collectContentWithRetries(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, int maxRetries) {
