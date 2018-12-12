@@ -427,16 +427,15 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private void navigateToReaderPage(WebDriver driver, String asin) {
-        driver.navigate().to("https://read.amazon.com/?asin=" + asin);
     }
 
     private void collectContentWithRetries(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, int maxRetries) {
         // Catch exceptions the first few times...
         int retries = maxRetries;
+        final long baseWaitMillis = 10000L;
         while (retries > 1) {
             try {
-                collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, retries == maxRetries);
+                collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, true, baseWaitMillis + (maxRetries - retries) * 5000L);
                 if (text.size() > 0) {
                     return;
                 } else {
@@ -452,10 +451,12 @@ public class AmazonKindle extends SiteScraper {
             retries--;
         }
         // Then fail the last time.
-        collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false);
+        collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, true, baseWaitMillis + (maxRetries - 1) * 5000L);
     }
 
-    private void collectContent(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart) {
+    private void collectContent(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart, long waitMillis) {
+        driver.navigate().to("https://read.amazon.com/?asin=" + asin);
+        DriverUtils.sleep(waitMillis);
         final WebElement kindleReaderContainerDiv;
         try {
             kindleReaderContainerDiv = DriverUtils.findElementWithRetries(driver, By.id("KindleReaderContainer"), 7, 2500L);
@@ -523,7 +524,7 @@ public class AmazonKindle extends SiteScraper {
                 final String className = pageTurnAreaRightDiv.getAttribute("class");
                 if (!className.contains("pageArrow")) {
                     final long totalTime = System.currentTimeMillis() - startTime;
-                    getLogger().log(Level.INFO, "Finished collecting content; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
+                    getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
                     break;
                 }
                 pageTurnAreaRightDiv.click();
@@ -533,9 +534,7 @@ public class AmazonKindle extends SiteScraper {
                 if (url.startsWith("https://www.amazon.com/ap/signin")) {
                     // If so, sign in again and continue collecting content from the same position in the reader.
                     signIn(driver, email, password);
-                    navigateToReaderPage(driver, asin);
-                    DriverUtils.sleep(10000L);
-                    collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false);
+                    collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false, waitMillis);
                 }
                 return;
             }
