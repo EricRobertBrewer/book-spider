@@ -274,6 +274,8 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
+    private static final String SIGN_IN_URL_START = "https://www.amazon.com/ap/signin";
+
     private boolean isSignedIn(WebDriver driver) {
         final WebElement navbarDiv = driver.findElement(By.id("navbar"));
         final WebElement signInA = navbarDiv.findElement(By.id("nav-link-accountList"));
@@ -286,10 +288,12 @@ public class AmazonKindle extends SiteScraper {
      * @param driver        The web driver.
      */
     private void navigateToSignInPage(WebDriver driver) {
-        final WebElement navbarDiv = driver.findElement(By.id("navbar"));
-        final WebElement signInA = navbarDiv.findElement(By.id("nav-link-accountList"));
-        final String href = signInA.getAttribute("href").trim();
-        driver.navigate().to(href);
+        while (!driver.getCurrentUrl().startsWith(SIGN_IN_URL_START)) {
+            final WebElement navbarDiv = driver.findElement(By.id("navbar"));
+            final WebElement signInA = navbarDiv.findElement(By.id("nav-link-accountList"));
+            final String href = signInA.getAttribute("href").trim();
+            driver.navigate().to(href);
+        }
     }
 
     /**
@@ -696,7 +700,7 @@ public class AmazonKindle extends SiteScraper {
             } catch (StaleElementReferenceException e) {
                 // Check to see if we have been signed out automatically.
                 final String url = driver.getCurrentUrl();
-                if (url.startsWith("https://www.amazon.com/ap/signin")) {
+                if (url.startsWith(SIGN_IN_URL_START)) {
                     // If so, sign in again and continue collecting content from the same position in the reader.
                     signIn(driver, email, password);
                     collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false, waitMillis);
@@ -851,7 +855,7 @@ public class AmazonKindle extends SiteScraper {
         } catch (NoSuchElementException e) {
             // Check to see if we have been signed out automatically.
             final String url = driver.getCurrentUrl();
-            if (url.startsWith("https://www.amazon.com/ap/signin")) {
+            if (url.startsWith(SIGN_IN_URL_START)) {
                 // If so, sign in again and try to return the book again.
                 signIn(driver, email, password);
                 return returnKindleUnlimitedBook(driver, title, email, password);
