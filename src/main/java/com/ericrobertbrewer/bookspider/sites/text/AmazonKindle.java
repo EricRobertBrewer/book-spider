@@ -8,8 +8,6 @@ import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -221,12 +219,11 @@ public class AmazonKindle extends SiteScraper {
             borrowButton.click();
             try {
                 // Check if the borrowing was successful.
-                final WebDriverWait wait = new WebDriverWait(driver, 5);
-                wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("dbs-readnow-bookstore-rw")));
+                DriverUtils.findElementWithRetries(driver, By.id("dbs-readnow-bookstore-rw"), 3, 2500L);
                 getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
             } catch (NoSuchElementException e) {
                 // We were unable to borrow the book. Probably the 10-book limit is met.
-                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`. Has the 10-book limit been met? Skipping.");
+                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
                 return;
             }
             isKindleUnlimited = true;
