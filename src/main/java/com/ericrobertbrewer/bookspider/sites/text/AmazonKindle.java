@@ -237,8 +237,11 @@ public class AmazonKindle extends SiteScraper {
                 isKindleUnlimited = false;
                 break;
             case PURCHASE_AVAILABLE:
-            default:
                 getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
+                return;
+            case UNAVAILABLE:
+            default:
+                getLogger().log(Level.INFO, "Book `" + bookId + "` is unavailable to purchase. Skipping.");
                 return;
         }
         // Start collecting content.
@@ -456,10 +459,23 @@ public class AmazonKindle extends SiteScraper {
         KINDLE_UNLIMITED_BORROWED,
         PURCHASE_AVAILABLE,
         PURCHASE_AVAILABLE_FREE,
-        PURCHASE_OWNED
+        PURCHASE_OWNED,
+        /**
+         * The Kindle version of this book cannot be purchased.
+         * See `https://www.amazon.com/dp/B002EAZIS8`.
+         */
+        UNAVAILABLE
     }
 
     private PurchaseType getPurchaseType(WebElement dpContainerDiv, LayoutType layoutType) {
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+            try {
+                buyboxDiv.findElement(By.tagName("table"));
+            } catch (NoSuchElementException e) {
+                return PurchaseType.UNAVAILABLE;
+            }
+        }
         if (isBookOwned(dpContainerDiv, layoutType)) {
             return PurchaseType.PURCHASE_OWNED;
         } else if (isBookBorrowedThroughKindleUnlimited(dpContainerDiv, layoutType)) {
