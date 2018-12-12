@@ -300,16 +300,15 @@ public class AmazonKindle extends SiteScraper {
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement centerSectionDiv = aPageDiv.findElement(By.id("authportal-center-section"));
         final WebElement mainSectionDiv = centerSectionDiv.findElement(By.id("authportal-main-section"));
-        // Enter email.
+        // Enter email, if necessary.
         final WebElement emailInput;
         try {
             emailInput = DriverUtils.findElementWithRetries(mainSectionDiv, By.id("ap_email"), 5, 2500L);
-        } catch (NoSuchElementException e) {
-            getLogger().log(Level.SEVERE, "Unable to find `ap_email` element in page at URL `" + driver.getCurrentUrl() + "` while signing in. Quitting.");
-            return;
+            emailInput.click();
+            emailInput.sendKeys(email);
+        } catch (NoSuchElementException ignored) {
+            // Since we checked the "Keep me signed in" box, our email has already entered.
         }
-        emailInput.click();
-        emailInput.sendKeys(email);
         // Enter password.
         final WebElement passwordInput = driver.findElement(By.id("ap_password"));
         passwordInput.click();
