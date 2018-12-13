@@ -17,7 +17,7 @@ public class Folders {
     /**
      * Root of log files.
      */
-    private static final String LOGS_ROOT = "logs" + SLASH;
+    private static final String LOGS_ROOT = ".." + SLASH + "logs" + SLASH;
 
     public static final String ID_BOOKCAVE = "bookcave";
     public static final String ID_BOOKCAVE_AMAZON_KINDLE = "bookcave_amazon_kindle";
