@@ -39,7 +39,7 @@ public abstract class SiteScraperTest<T extends SiteScraper> {
         factory = new ChromeDriverFactory();
         final SiteScraper.Provider<T> provider = getTestProvider();
         final String id = provider.getId();
-        final Logger logger = Logger.getLogger(provider.getScraperClass().getSimpleName());
+        final Logger logger = Logger.getLogger(provider.getClass().getSimpleName());
         final File logFile = Folders.getLogFile(id);
         fileHandler = new FileHandler(logFile.getPath());
         logger.addHandler(fileHandler);

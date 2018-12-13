@@ -22,7 +22,7 @@ public class Launcher {
         final WebDriverFactory factory = new ChromeDriverFactory();
         // Create logger.
         final String id = provider.getId();
-        final Logger logger = Logger.getLogger(provider.getScraperClass().getSimpleName());
+        final Logger logger = Logger.getLogger(provider.getClass().getSimpleName());
         final File logFile = Folders.getLogFile(id);
         final FileHandler fileHandler = new FileHandler(logFile.getPath());
         logger.addHandler(fileHandler);

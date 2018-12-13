@@ -25,11 +25,6 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
     public static void main(String[] args) throws IOException {
         Launcher.launch(args, new Provider<NewYorkTimesFirstChapters>() {
             @Override
-            public Class<NewYorkTimesFirstChapters> getScraperClass() {
-                return NewYorkTimesFirstChapters.class;
-            }
-
-            @Override
             public NewYorkTimesFirstChapters newInstance(Logger logger) {
                 return new NewYorkTimesFirstChapters(logger);
             }
@@ -41,7 +36,7 @@ public class NewYorkTimesFirstChapters extends SiteScraper {
         });
     }
 
-    public NewYorkTimesFirstChapters(Logger logger) {
+    private NewYorkTimesFirstChapters(Logger logger) {
         super(logger);
     }
 

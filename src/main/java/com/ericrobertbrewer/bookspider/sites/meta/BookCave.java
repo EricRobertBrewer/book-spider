@@ -29,11 +29,6 @@ public class BookCave extends SiteScraper {
     public static void main(String[] args) throws IOException {
         Launcher.launch(args, new Provider<BookCave>() {
             @Override
-            public Class<BookCave> getScraperClass() {
-                return BookCave.class;
-            }
-
-            @Override
             public BookCave newInstance(Logger logger) {
                 return new BookCave(logger);
             }
@@ -771,11 +766,6 @@ public class BookCave extends SiteScraper {
         }
 
         @Override
-        public Class<AmazonPreview> getScraperClass() {
-            return AmazonPreview.class;
-        }
-
-        @Override
         public AmazonPreview newInstance(Logger logger) {
             final List<Book> allBooks = getAllBooks(logger);
             final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
@@ -793,11 +783,6 @@ public class BookCave extends SiteScraper {
 
         public static void main(String[] args) throws IOException {
             Launcher.launch(args, new AmazonKindleProvider());
-        }
-
-        @Override
-        public Class<AmazonKindle> getScraperClass() {
-            return AmazonKindle.class;
         }
 
         @Override

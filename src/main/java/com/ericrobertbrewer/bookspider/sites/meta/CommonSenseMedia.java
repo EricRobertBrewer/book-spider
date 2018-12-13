@@ -28,11 +28,6 @@ public class CommonSenseMedia extends SiteScraper {
     public static void main(String[] args) throws IOException {
         Launcher.launch(args, new Provider<CommonSenseMedia>() {
             @Override
-            public Class<CommonSenseMedia> getScraperClass() {
-                return CommonSenseMedia.class;
-            }
-
-            @Override
             public CommonSenseMedia newInstance(Logger logger) {
                 return new CommonSenseMedia(logger);
             }

@@ -20,11 +20,6 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
 
     private static final SiteScraper.Provider<AmazonKindle> TEST_PROVIDER = new SiteScraper.Provider<>() {
         @Override
-        public Class<AmazonKindle> getScraperClass() {
-            return AmazonKindle.class;
-        }
-
-        @Override
         public AmazonKindle newInstance(Logger logger) {
             final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
             return new AmazonKindle(logger, bookScrapeInfos);
