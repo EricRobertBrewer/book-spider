@@ -185,7 +185,12 @@ public class AmazonKindle extends SiteScraper {
             return;
         }
         // Ensure that we have navigated to the Amazon store page for the Kindle version of the book.
-        ensureKindleStorePage(driver, layoutType);
+        if (!ensureKindleStorePage(driver, layoutType)) {
+            // It's possible that a book is simply not available on Amazon Kindle.
+            // See `https://www.amazon.com/dp/0689307764`.
+            getLogger().log(Level.WARNING, "Unable to navigate to the page for the Kindle version of book `" + bookId + "`. It may not exist. Skipping.");
+            return;
+        }
         // Find the main container.
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
@@ -379,8 +384,9 @@ public class AmazonKindle extends SiteScraper {
      * To avoid `StaleElementReferenceException`s, invoke this method before finding elements via the web driver.
      * @param driver        The web driver.
      * @param layoutType    The layout type of the Amazon store page.
+     * @return `true` if the driver was already on, or has been directed to the Kindle store page. Otherwise, `false`.
      */
-    private void ensureKindleStorePage(WebDriver driver, LayoutType layoutType) {
+    private boolean ensureKindleStorePage(WebDriver driver, LayoutType layoutType) {
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
         final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
@@ -405,7 +411,7 @@ public class AmazonKindle extends SiteScraper {
                     driver.navigate().to(href);
                 }
                 // Whether we've navigated to the Kindle store page or we're already there, stop looking for the 'Kindle' item.
-                return;
+                return true;
             }
         } else if (layoutType == LayoutType.TABS) {
             final WebElement ppdFixedGridRightColumnDiv = dpContainerDiv.findElement(By.id("ppdFixedGridRightColumn"));
@@ -426,9 +432,10 @@ public class AmazonKindle extends SiteScraper {
                     final String href = a.getAttribute("href").trim();
                     driver.navigate().to(href);
                 }
-                return;
+                return true;
             }
         }
+        return false;
     }
 
     private String getBookTitle(WebElement dpContainerDiv, LayoutType layoutType) {
