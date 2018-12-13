@@ -744,12 +744,20 @@ public class AmazonKindle extends SiteScraper {
             frameDriver.switchTo().parentFrame();
             return;
         } else if ("img".equals(tag)) {
+            // TODO: Capture ALL images - not just ones that are leaf elements!
+            final String src = element.getAttribute("src");
+            final String url;
             final String dataurl = element.getAttribute("dataurl");
-            final String url = WebUtils.getLastUrlComponent(dataurl);
+            if (dataurl != null) {
+                // For primarily textual books.
+                url = WebUtils.getLastUrlComponent(dataurl).trim();
+            } else {
+                // For illustrative (children's) books - especially cover page images.
+                url = src.substring(Math.max(0, src.length() - 18), Math.max(0, src.length() - 12)).trim();
+            }
             if (imgUrlToSrc.containsKey(url)) {
                 return;
             }
-            final String src = element.getAttribute("src");
             imgUrlToSrc.put(url, src);
             return;
         }
