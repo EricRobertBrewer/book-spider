@@ -712,7 +712,8 @@ public class AmazonKindle extends SiteScraper {
 
     private void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc) {
         // Check whether this textual element has already been scraped.
-        final String id = element.getAttribute("id");
+        final String idAttr = element.getAttribute("id");
+        final String id = idAttr != null ? idAttr : element.getAttribute("data-nid");
         if (text.containsKey(id)) {
             return;
         }
