@@ -116,7 +116,7 @@ public class AmazonKindle extends SiteScraper {
             for (String url : bookScrapeInfo.urls) {
                 try {
                     getLogger().log(Level.INFO, "Processing book `" + bookScrapeInfo.id + "` using URL `" + url + "`.");
-                    scrapeBook(bookScrapeInfo.id, url, driver, contentFolder, textFile, email, password, maxRetries);
+                    scrapeBook(bookScrapeInfo.id, url, driver, bookFolder, textFile, email, password, maxRetries);
                     break;
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
