@@ -36,6 +36,10 @@ public class CommonSenseMedia extends SiteScraper {
             public String getId() {
                 return Folders.ID_COMMONSENSEMEDIA;
             }
+
+            @Override
+            public void onComplete(CommonSenseMedia instance) {
+            }
         });
     }
 
@@ -456,7 +460,7 @@ public class CommonSenseMedia extends SiteScraper {
         }
 
         int insertBook(Book book) throws SQLException {
-            ensureTableExists(TABLE_BOOKS);
+            createTableIfNeeded(TABLE_BOOKS);
             final PreparedStatement insert = getConnection().prepareStatement(
                     "INSERT INTO " + TABLE_BOOKS +
                     "(id,title,authors,illustrators,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
@@ -486,7 +490,7 @@ public class CommonSenseMedia extends SiteScraper {
         }
 
         int insertBookCategory(BookCategory bookCategory) throws SQLException {
-            ensureTableExists(TABLE_BOOK_CATEGORIES);
+            createTableIfNeeded(TABLE_BOOK_CATEGORIES);
             final PreparedStatement insert = getConnection().prepareStatement(
                     "INSERT INTO " + TABLE_BOOK_CATEGORIES +
                     "(book_id,category_id,level,explanation)\n" +
@@ -501,7 +505,7 @@ public class CommonSenseMedia extends SiteScraper {
         }
 
         @Override
-        public void ensureTableExists(String name) throws SQLException {
+        public void createTableIfNeeded(String name) throws SQLException {
             if (TABLE_BOOKS.equalsIgnoreCase(name)) {
                 final Statement statement = getConnection().createStatement();
                 statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (\n" +

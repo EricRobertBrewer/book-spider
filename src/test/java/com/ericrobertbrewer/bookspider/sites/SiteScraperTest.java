@@ -45,7 +45,7 @@ public abstract class SiteScraperTest<T extends SiteScraper> {
         logger.addHandler(fileHandler);
         final Formatter formatter = new SimpleFormatter();
         fileHandler.setFormatter(formatter);
-        contentFolder = Folders.getContentFolder(id);
+        contentFolder = Folders.makeContentFolder(id);
         scraper = provider.newInstance(logger);
     }
 

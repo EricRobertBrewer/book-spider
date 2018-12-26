@@ -10,8 +10,8 @@ public abstract class SiteScraper {
 
     public interface Provider<T extends SiteScraper> {
         T newInstance(Logger logger);
-
         String getId();
+        void onComplete(T instance);
     }
 
     private final Logger logger;

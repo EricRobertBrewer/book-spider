@@ -29,6 +29,10 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
         public String getId() {
             return Folders.ID_BOOKCAVE_AMAZON_KINDLE;
         }
+
+        @Override
+        public void onComplete(AmazonKindle instance) {
+        }
     };
 
     private static final String EMAIL = "EMAIL"; //"eric.r.brewer@gmail.com";
@@ -46,7 +50,7 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
     public void setUp() throws IOException {
         super.setUp();
         driver = getFactory().newInstance();
-        getScraper().ensureReaderIsSingleColumn(driver);
+        getScraper().setIsWindowSingleColumn(driver);
     }
 
     @Test

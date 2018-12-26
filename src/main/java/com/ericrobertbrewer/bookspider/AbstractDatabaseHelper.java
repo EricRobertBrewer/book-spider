@@ -59,10 +59,10 @@ public abstract class AbstractDatabaseHelper {
         }
     }
 
-    public abstract void ensureTableExists(String name) throws SQLException;
+    public abstract void createTableIfNeeded(String name) throws SQLException;
 
     protected boolean recordExists(String table, String key, String value) throws SQLException {
-        ensureTableExists(table);
+        createTableIfNeeded(table);
         final PreparedStatement select = getConnection().prepareStatement(
                 "SELECT " + key +
                 " FROM " + table +
@@ -76,6 +76,14 @@ public abstract class AbstractDatabaseHelper {
 
     protected static int getIntOrNull(ResultSet result, String columnLabel, int nullValue) throws SQLException {
         final int value = result.getInt(columnLabel);
+        if (result.wasNull()) {
+            return nullValue;
+        }
+        return value;
+    }
+
+    protected static long getLongOrNull(ResultSet result, String columnLabel, long nullValue) throws SQLException {
+        final long value = result.getLong(columnLabel);
         if (result.wasNull()) {
             return nullValue;
         }

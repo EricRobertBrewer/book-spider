@@ -21,12 +21,32 @@ import java.util.logging.Logger;
 
 public class AmazonKindle extends SiteScraper {
 
+    public interface Listener {
+        boolean shouldUpdateBook(String bookId);
+        void onUpdateBook(String bookId, String id, boolean isKindleUnlimited, String price);
+    }
+
+    public static boolean isPriceFree(String price) {
+        if (price == null) {
+            return false;
+        }
+        return price.startsWith(PRICE_FREE);
+    }
+
+    private static final String PRICE_FREE = "$0.00";
+
     private final List<BookScrapeInfo> bookScrapeInfos;
     private final AtomicInteger scrapeThreadsRunning = new AtomicInteger(0);
+
+    private Listener listener;
 
     public AmazonKindle(Logger logger, List<BookScrapeInfo> bookScrapeInfos) {
         super(logger);
         this.bookScrapeInfos = bookScrapeInfos;
+    }
+
+    public void setListener(Listener listener) {
+        this.listener = listener;
     }
 
     @Override
@@ -55,8 +75,9 @@ public class AmazonKindle extends SiteScraper {
         } else {
             force = false;
         }
-        // Create thread-safe queue.
+        // Process the books in a random order.
         Collections.shuffle(bookScrapeInfos);
+        // Create thread-safe queue.
         final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
         // Start scraping.
         scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, maxRetries, force, callback);
@@ -67,7 +88,7 @@ public class AmazonKindle extends SiteScraper {
             final Thread scrapeThread = new Thread(() -> {
                 final WebDriver driver = factory.newInstance();
                 scrapeThreadsRunning.incrementAndGet();
-                ensureReaderIsSingleColumn(driver);
+                setIsWindowSingleColumn(driver);
                 // Start scraping.
                 scrapeBooks(queue, driver, contentFolder, email, password, maxRetries, force);
                 driver.quit();
@@ -84,7 +105,7 @@ public class AmazonKindle extends SiteScraper {
      * Ensure that only one column is shown in the Kindle reader.
      * @param driver        The web driver.
      */
-    void ensureReaderIsSingleColumn(WebDriver driver) {
+    void setIsWindowSingleColumn(WebDriver driver) {
         driver.manage().window().setSize(new Dimension(719, 978));
     }
 
@@ -100,10 +121,6 @@ public class AmazonKindle extends SiteScraper {
                 getLogger().log(Level.SEVERE, "Unable to create book folder for `" + bookScrapeInfo.id + "`. Skipping.");
                 continue;
             }
-            // Check whether we can skip this book.
-            if (!shouldScrapeBook(bookFolder, force)) {
-                continue;
-            }
             // Get the text file for this book.
             final File textFile;
             try {
@@ -112,7 +129,22 @@ public class AmazonKindle extends SiteScraper {
                 getLogger().log(Level.SEVERE, "Encountered IOException while accessing text file for book `" + bookScrapeInfo.id + "`.", e);
                 continue;
             }
-            // Try scraping the text for this book.
+            // Check if this book can be skipped.
+            if (listener != null) {
+                if (!listener.shouldUpdateBook(bookScrapeInfo.id)) {
+                    if (textFile.exists()) {
+                        getLogger().log(Level.INFO, "Book `" + bookScrapeInfo.id + "` does not need to be updated and its text file exists. Continuing without processing.");
+                        continue;
+                    } else if (!isPriceFree(bookScrapeInfo.price)) {
+                        getLogger().log(Level.INFO, "Book `" + bookScrapeInfo.id + "` has not been free to purchase (" + bookScrapeInfo.price + ") recently. Continuing without processing.");
+                        continue;
+                    }
+                }
+            } else if (textFile.exists()) {
+                getLogger().log(Level.INFO, "Book `" + bookScrapeInfo.id + "` has already been scraped. Continuing.");
+                continue;
+            }
+            // Try updating, then scraping the text for this book.
             for (String url : bookScrapeInfo.urls) {
                 try {
                     getLogger().log(Level.INFO, "Processing book `" + bookScrapeInfo.id + "` using URL `" + url + "`.");
@@ -134,14 +166,6 @@ public class AmazonKindle extends SiteScraper {
             throw new IOException("Unable to create book folder for `" + bookId + "`.");
         }
         return bookFolder;
-    }
-
-    private boolean shouldScrapeBook(File bookFolder, boolean force) {
-        if (force) {
-            return true;
-        }
-        final File file = new File(bookFolder, "text.txt");
-        return !file.exists();
     }
 
     private File getTextFile(File bookFolder, boolean force) throws IOException {
@@ -185,7 +209,7 @@ public class AmazonKindle extends SiteScraper {
             return;
         }
         // Ensure that we have navigated to the Amazon store page for the Kindle version of the book.
-        if (!ensureKindleStorePage(driver, layoutType)) {
+        if (!navigateToKindleStorePageIfNeeded(driver, layoutType)) {
             // It's possible that a book is simply not available on Amazon Kindle.
             // See `https://www.amazon.com/dp/0689307764`.
             getLogger().log(Level.WARNING, "Unable to navigate to the page for the Kindle version of book `" + bookId + "`. It may not exist. Skipping.");
@@ -209,51 +233,75 @@ public class AmazonKindle extends SiteScraper {
             getLogger().log(Level.SEVERE, "Unable to find Amazon ID for book `" + bookId + "` within URL `" + url + "`. Skipping.");
             return;
         }
-        // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
+        // Extract this book's significant Amazon database fields.
         final PurchaseType purchaseType = getPurchaseType(dpContainerDiv, layoutType);
-        final boolean isKindleUnlimited;
+        boolean isKindleUnlimited = false;
+        String price = null;
         switch (purchaseType) {
             case PURCHASE_OWNED:
-                getLogger().log(Level.INFO, "Book `" + bookId + "` already owned. Navigating...");
-                isKindleUnlimited = false;
+                price = getBookPrice(dpContainerDiv, layoutType);
+                getLogger().log(Level.INFO, "Book `" + bookId + "` already purchased.");
                 break;
             case KINDLE_UNLIMITED_BORROWED:
-                getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Amazon Kindle. Navigating...");
+                getLogger().log(Level.INFO, "Book `" + bookId + "` already borrowed through Kindle Unlimited.");
                 isKindleUnlimited = true;
                 break;
             case KINDLE_UNLIMITED_AVAILABLE:
-                // Click 'Read for Free'
-                try {
-                    // Check if the borrowing was successful.
-                    borrowBookThroughKindleUnlimited(driver, dpContainerDiv, layoutType);
-                } catch (NoSuchElementException e) {
-                    // We were unable to borrow the book. Probably the 10-book limit is met.
-                    getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
-                    return;
-                }
-                getLogger().log(Level.INFO, "Book `" + bookId + "` successfully borrowed. Navigating...");
+                getLogger().log(Level.INFO, "Book `" + bookId + "` is available through Kindle Unlimited.");
                 isKindleUnlimited = true;
                 break;
-            case PURCHASE_AVAILABLE_FREE:
-                getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
-                // "Purchase" the book.
-                purchaseBook(dpContainerDiv, layoutType);
-                // Since it's not part of the Kindle Unlimited collection, it does not have to be returned.
-                isKindleUnlimited = false;
-                break;
             case PURCHASE_AVAILABLE:
-                getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
-                return;
+                price = getBookPrice(dpContainerDiv, layoutType);
+                getLogger().log(Level.INFO, "Book `" + bookId + "` is available to purchase.");
+                break;
             case UNAVAILABLE:
             default:
-                getLogger().log(Level.INFO, "Book `" + bookId + "` is unavailable to purchase. Skipping.");
+                break;
+        }
+        // Update Amazon fields in database, if possible.
+        if (listener != null) {
+            getLogger().log(Level.INFO, "Updating Amazon fields for book `" + bookId + "`: ID=" + asin + "; isKindleUnlimited=" + isKindleUnlimited + "; price=" + price + ".");
+            listener.onUpdateBook(bookId, asin, isKindleUnlimited, price);
+        }
+        // Check if this book's text has already been extracted.
+        if (textFile.exists()) {
+            getLogger().log(Level.INFO, "Text for book `" + bookId + "` has already been extracted. Skipping.");
+            return;
+        }
+        // Gain access to this book, if needed.
+        if (purchaseType == PurchaseType.KINDLE_UNLIMITED_AVAILABLE) {
+            // Click 'Read for Free'.
+            try {
+                // Check if the borrowing was successful.
+                borrowBookThroughKindleUnlimited(driver, dpContainerDiv, layoutType);
+            } catch (NoSuchElementException e) {
+                // We were unable to borrow the book. Probably the 10-book limit is met.
+                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
                 return;
+            }
+            getLogger().log(Level.INFO, "Book `" + bookId + "` has been successfully borrowed.");
+        } else if (purchaseType == PurchaseType.PURCHASE_AVAILABLE) {
+            if (price == null) {
+                getLogger().log(Level.SEVERE, "Unable to find price for book `" + bookId + "`. Skipping.");
+                return;
+            } else if (isPriceFree(price)) {
+                getLogger().log(Level.INFO, "Book `" + bookId + "` is free on Kindle. Purchasing...");
+                // "Purchase" the book.
+                purchaseBook(driver, dpContainerDiv, layoutType);
+            } else {
+                getLogger().log(Level.INFO, "Book `" + bookId + "` is neither free nor available through Kindle Unlimited. Skipping.");
+                return;
+            }
+        } else if (purchaseType == PurchaseType.UNAVAILABLE) {
+            getLogger().log(Level.INFO, "Book `" + bookId + "` is unavailable to purchase. Skipping.");
+            return;
         }
         // Start collecting content.
-        getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`");
+        getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`...");
         final Map<String, String> text = new HashMap<>();
         final Map<String, String> imgUrlToSrc = new HashMap<>();
         try {
+            // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
             collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, maxRetries);
             // Check whether any content has been extracted.
             if (text.size() > 0) {
@@ -319,7 +367,7 @@ public class AmazonKindle extends SiteScraper {
             emailInput.click();
             emailInput.sendKeys(email);
         } catch (NoSuchElementException ignored) {
-            // Since we checked the "Keep me signed in" box, our email has already entered.
+            // Since we checked the "Keep me signed in" box, our email has already been entered.
         }
         // Enter password.
         final WebElement passwordInput = driver.findElement(By.id("ap_password"));
@@ -386,26 +434,17 @@ public class AmazonKindle extends SiteScraper {
      * @param layoutType    The layout type of the Amazon store page.
      * @return `true` if the driver was already on, or has been directed to the Kindle store page. Otherwise, `false`.
      */
-    private boolean ensureKindleStorePage(WebDriver driver, LayoutType layoutType) {
+    private boolean navigateToKindleStorePageIfNeeded(WebDriver driver, LayoutType layoutType) {
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement dpDiv = aPageDiv.findElement(By.id("dp"));
         final WebElement dpContainerDiv = dpDiv.findElement(By.id("dp-container"));
         if (layoutType == LayoutType.COLUMNS) {
-            final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
-            final WebElement mediaMatrixDiv = centerColDiv.findElement(By.id("MediaMatrix"));
-            final WebElement formatsDiv = mediaMatrixDiv.findElement(By.id("formats"));
-            final WebElement tmmSwatchesDiv = formatsDiv.findElement(By.id("tmmSwatches"));
-            final WebElement ul = tmmSwatchesDiv.findElement(By.tagName("ul"));
-            final List<WebElement> lis = ul.findElements(By.tagName("li"));
-            for (WebElement li : lis) {
-                final String text = li.getText().trim();
-                if (!text.startsWith("Kindle")) {
-                    continue;
-                }
-                final String className = li.getAttribute("class");
+            final WebElement kindleSwatchLi = getKindleSwatchLi(dpContainerDiv);
+            if (kindleSwatchLi != null) {
+                final String className = kindleSwatchLi.getAttribute("class");
                 if (className.contains("unselected")) {
                     // The 'Kindle' media item is unselected. We're probably looking at the wrong store page.
-                    final WebElement a = li.findElement(By.tagName("a"));
+                    final WebElement a = kindleSwatchLi.findElement(By.tagName("a"));
                     // Navigate to the Kindle store page.
                     final String href = a.getAttribute("href").trim();
                     driver.navigate().to(href);
@@ -436,6 +475,22 @@ public class AmazonKindle extends SiteScraper {
             }
         }
         return false;
+    }
+
+    private WebElement getKindleSwatchLi(WebElement dpContainerDiv) {
+        final WebElement centerColDiv = dpContainerDiv.findElement(By.id("centerCol"));
+        final WebElement mediaMatrixDiv = centerColDiv.findElement(By.id("MediaMatrix"));
+        final WebElement formatsDiv = mediaMatrixDiv.findElement(By.id("formats"));
+        final WebElement tmmSwatchesDiv = formatsDiv.findElement(By.id("tmmSwatches"));
+        final WebElement ul = tmmSwatchesDiv.findElement(By.tagName("ul"));
+        final List<WebElement> lis = ul.findElements(By.tagName("li"));
+        for (WebElement li : lis) {
+            final String text = li.getText().trim();
+            if (text.startsWith("Kindle")) {
+                return li;
+            }
+        }
+        return null;
     }
 
     private String getBookTitle(WebElement dpContainerDiv, LayoutType layoutType) {
@@ -469,7 +524,6 @@ public class AmazonKindle extends SiteScraper {
         KINDLE_UNLIMITED_AVAILABLE,
         KINDLE_UNLIMITED_BORROWED,
         PURCHASE_AVAILABLE,
-        PURCHASE_AVAILABLE_FREE,
         PURCHASE_OWNED,
         /**
          * The Kindle version of this book cannot be purchased.
@@ -493,8 +547,6 @@ public class AmazonKindle extends SiteScraper {
             return PurchaseType.KINDLE_UNLIMITED_BORROWED;
         } else if (canBorrowBookThroughKindleUnlimited(dpContainerDiv, layoutType)) {
             return PurchaseType.KINDLE_UNLIMITED_AVAILABLE;
-        } else if (isBookFree(dpContainerDiv, layoutType)) {
-            return PurchaseType.PURCHASE_AVAILABLE_FREE;
         }
         return PurchaseType.PURCHASE_AVAILABLE;
     }
@@ -563,37 +615,30 @@ public class AmazonKindle extends SiteScraper {
         }
         borrowButton.click();
         // Check if the borrowing was successful.
-        DriverUtils.findElementWithRetries(driver, By.id("dbs-readnow-bookstore-rw"), 3, 2500L);
+        try {
+            DriverUtils.findElementWithRetries(driver, By.id("dbs-readnow-bookstore-rw"), 2, 2500L);
+        } catch (NoSuchElementException e) {
+            DriverUtils.findElementWithRetries(driver, By.id("dbs-goto-bookstore-rw"), 2, 2500L);
+        }
     }
 
-    private boolean isBookFree(WebElement dpContainerDiv, LayoutType layoutType) {
+    private String getBookPrice(WebElement dpContainerDiv, LayoutType layoutType) {
         if (layoutType == LayoutType.COLUMNS) {
-            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
-            final WebElement buyTable = buyboxDiv.findElement(By.tagName("table"));
-            final List<WebElement> trs = buyTable.findElements(By.tagName("tr"));
-            for (WebElement tr : trs) {
-                final List<WebElement> tds = tr.findElements(By.tagName("td"));
-                if (tds.size() < 2) {
-                    continue;
-                }
-                final String td0Text = tds.get(0).getText().trim();
-                if (!"Kindle Price:".equalsIgnoreCase(td0Text)) {
-                    continue;
-                }
-                final String td1Text = tds.get(1).getText().trim();
-                return td1Text.startsWith("$0.00");
+            final WebElement kindleSwatchLi = getKindleSwatchLi(dpContainerDiv);
+            if (kindleSwatchLi != null) {
+                final WebElement priceSpan = kindleSwatchLi.findElement(By.className("a-color-price"));
+                return priceSpan.getText().trim();
             }
         } else if (layoutType == LayoutType.TABS) {
             final WebElement contentLandingDiv = dpContainerDiv.findElement(By.id("mediaTab_content_landing"));
             final WebElement mediaNoAccordionDiv = contentLandingDiv.findElement(By.id("mediaNoAccordion"));
             final WebElement priceSpan = mediaNoAccordionDiv.findElement(By.className("header-price"));
-            final String priceText = priceSpan.getText().trim();
-            return priceText.startsWith("$0.00");
+            return priceSpan.getText().trim();
         }
-        return false;
+        return null;
     }
 
-    private void purchaseBook(WebElement dpContainerDiv, LayoutType layoutType) {
+    private void purchaseBook(WebDriver driver, WebElement dpContainerDiv, LayoutType layoutType) {
         final WebElement buyOneClickForm;
         if (layoutType == LayoutType.COLUMNS) {
             final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
@@ -603,6 +648,12 @@ public class AmazonKindle extends SiteScraper {
         }
         final WebElement checkoutButtonIdSpan = buyOneClickForm.findElement(By.id("checkoutButtonId"));
         checkoutButtonIdSpan.click();
+        // Check if the purchase was successful.
+        try {
+            DriverUtils.findElementWithRetries(driver, By.id("dbs-readnow-bookstore-rw"), 3, 2500L);
+        } catch (NoSuchElementException e) {
+            DriverUtils.findElementWithRetries(driver, By.id("dbs-goto-bookstore-rw"), 3, 2500L);
+        }
     }
 
     private void collectContentWithRetries(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, int maxRetries) {
@@ -734,6 +785,7 @@ public class AmazonKindle extends SiteScraper {
         if ("none".equals(display)) {
             return;
         }
+        // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
         // Return the visible text of all relevant children, if any exist.
         final List<WebElement> children = element.findElements(By.xpath("./*"));
         if (children.size() > 0 && !areAllFormatting(children)) {
