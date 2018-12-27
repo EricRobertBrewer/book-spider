@@ -11,6 +11,7 @@ import org.openqa.selenium.WebDriver;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.logging.Logger;
 
@@ -22,6 +23,8 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
         @Override
         public AmazonKindle newInstance(Logger logger) {
             final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
+            // Add individual books here.
+            bookScrapeInfos.add(new BookScrapeInfo("my-snowman-paul", new String[]{"https://mybookcave.com/t/?u=0&b=69733&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
             return new AmazonKindle(logger, bookScrapeInfos);
         }
 
@@ -51,6 +54,11 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
         super.setUp();
         driver = getFactory().newInstance();
         getScraper().setIsWindowSingleColumn(driver);
+    }
+
+    @Test
+    void scrapeTest() {
+        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, getContentFolder(), EMAIL, PASSWORD, 4, false);
     }
 
     @Test

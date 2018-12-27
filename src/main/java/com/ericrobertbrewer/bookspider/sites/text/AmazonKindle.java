@@ -35,7 +35,7 @@ public class AmazonKindle extends SiteScraper {
 
     private static final String PRICE_FREE = "$0.00";
 
-    private final List<BookScrapeInfo> bookScrapeInfos;
+    final List<BookScrapeInfo> bookScrapeInfos;
     private final AtomicInteger scrapeThreadsRunning = new AtomicInteger(0);
 
     private Listener listener;
@@ -109,7 +109,7 @@ public class AmazonKindle extends SiteScraper {
         driver.manage().window().setSize(new Dimension(719, 978));
     }
 
-    private void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, int maxRetries, boolean force) {
+    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, int maxRetries, boolean force) {
         while (!queue.isEmpty()) {
             // Pull the next book off of the queue.
             final BookScrapeInfo bookScrapeInfo = queue.poll();
@@ -776,19 +776,20 @@ public class AmazonKindle extends SiteScraper {
 
     private void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc) {
         // Check whether this textual element has already been scraped.
-        final String idAttr = element.getAttribute("id");
-        final String id = idAttr != null ? idAttr : element.getAttribute("data-nid");
+        final String id = element.getAttribute("id");
         if (text.containsKey(id)) {
             return;
         }
+        final String dataNid = element.getAttribute("data-nid");
+        if (text.containsKey(dataNid)) {
+            return;
+        }
         // Ignore hidden elements.
-        final String visibility = element.getCssValue("visibility");
-        if ("hidden".equals(visibility)) {
+        if ("hidden".equals(element.getCssValue("visibility"))) {
             return;
         }
         // Ignore elements which are not displayed.
-        final String display = element.getCssValue("display");
-        if ("none".equals(display)) {
+        if ("none".equals(element.getCssValue("display"))) {
             return;
         }
         // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
@@ -819,24 +820,48 @@ public class AmazonKindle extends SiteScraper {
                 url = WebUtils.getLastUrlComponent(dataurl).trim();
             } else {
                 // For illustrative (children's) books - especially cover page images.
-                url = src.substring(Math.max(0, src.length() - 18), Math.max(0, src.length() - 12)).trim();
+                url = getImageUrlFromSrc(src);
             }
             if (imgUrlToSrc.containsKey(url)) {
                 return;
             }
             imgUrlToSrc.put(url, src);
             return;
+        } else if ("div".equals(tag)) {
+            if ("page-img".equals(id)) {
+                // Capture background images of <div> elements, common in illustrative (children's) books.
+                final String backgroundImageValue = element.getCssValue("background-image");
+                if (backgroundImageValue != null && !backgroundImageValue.isEmpty() && !"none".equals(backgroundImageValue)) {
+                    final String src;
+                    if (backgroundImageValue.startsWith("url(\"") && backgroundImageValue.endsWith("\")")) {
+                        src = backgroundImageValue.substring(5, backgroundImageValue.length() - 2).trim();
+                    } else {
+                        src = backgroundImageValue.trim();
+                    }
+                    final String url;
+                    if (dataNid != null) {
+                        url = dataNid.replaceAll(":", "_").trim();
+                    } else {
+                        url = getImageUrlFromSrc(src);
+                    }
+                    imgUrlToSrc.put(url, src);
+                    return;
+                }
+            }
         }
         // Get this leaf-element's visible text.
         final String visibleText = element.getText().trim();
         if (visibleText.isEmpty()) {
             return;
         }
-        if (!id.contains(":")) {
-            getLogger().log(Level.WARNING, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
+        if (isStandardId(id)) {
+            text.put(id, visibleText);
+            return;
+        } else if (isStandardId(dataNid)) {
+            text.put(dataNid, visibleText);
             return;
         }
-        text.put(id, visibleText);
+        getLogger().log(Level.SEVERE, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
     }
 
     private void writeBook(File file, Map<String, String> text) throws IOException {
@@ -958,6 +983,16 @@ public class AmazonKindle extends SiteScraper {
             }
         }
         return false;
+    }
+
+    private static boolean isStandardId(String id) {
+        return id != null && id.contains(":");
+    }
+
+    private static String getImageUrlFromSrc(String src) {
+        return src.substring(Math.max(0, src.length() - 18), Math.max(0, src.length() - 12))
+                .replaceAll("/+", "")
+                .trim();
     }
 
     private static final Set<String> FORMATTING_TAGS = new HashSet<>();
