@@ -568,7 +568,13 @@ public class AmazonKindle extends SiteScraper {
             }
             final String readNowDescriptionText = readNowDescriptionTextSpan.getText().trim();
             return readNowDescriptionText.startsWith("You already own this item");
-        } catch (NoSuchElementException ignored) {
+        } catch (NoSuchElementException e) {
+            try {
+                final WebElement ebooksInstantOrderUpdateSpan = dpContainerDiv.findElement(By.id("ebooksInstantOrderUpdate"));
+                final String ebooksInstantOrderUpdateSpanText = ebooksInstantOrderUpdateSpan.getText().trim();
+                return ebooksInstantOrderUpdateSpanText.startsWith("You purchased this item");
+            } catch (NoSuchElementException ignored) {
+            }
         }
         return false;
     }
