@@ -753,7 +753,7 @@ public class AmazonKindle extends SiteScraper {
             try {
                 final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
                 // Extract the visible text on this page.
-                addVisibleContent(readerDriver, contentDiv, text, imgUrlToSrc);
+                addVisibleContent(readerDriver, contentDiv, text, imgUrlToSrc, false);
                 // Attempt to turn the page right.
                 final WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
                 final String className = pageTurnAreaRightDiv.getAttribute("class");
@@ -776,7 +776,15 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc) {
+    private void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc, boolean isBelowIframe) {
+        // Ignore hidden elements.
+        if ("hidden".equals(element.getCssValue("visibility"))) {
+            return;
+        }
+        // Ignore elements which are not displayed.
+        if ("none".equals(element.getCssValue("display"))) {
+            return;
+        }
         // Check whether this textual element has already been scraped.
         final String id = element.getAttribute("id");
         if (text.containsKey(id)) {
@@ -786,22 +794,23 @@ public class AmazonKindle extends SiteScraper {
         if (text.containsKey(dataNid)) {
             return;
         }
-        // Ignore hidden elements.
-        if ("hidden".equals(element.getCssValue("visibility"))) {
-            return;
-        }
-        // Ignore elements which are not displayed.
-        if ("none".equals(element.getCssValue("display"))) {
-            return;
-        }
         // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
         // Return the visible text of all relevant children, if any exist.
         final List<WebElement> children = element.findElements(By.xpath("./*"));
-        if (children.size() > 0 && !areAllFormatting(children)) {
-            for (WebElement child : children) {
-                addVisibleContent(driver, child, text, imgUrlToSrc);
+        if (children.size() > 0) {
+            if (isBelowIframe) {
+                if (children.stream().allMatch(AmazonKindle::canAddChildElementContent)) {
+                    for (WebElement child : children) {
+                        addVisibleContent(driver, child, text, imgUrlToSrc, true);
+                    }
+                    return;
+                }
+            } else {
+                for (WebElement child : children) {
+                    addVisibleContent(driver, child, text, imgUrlToSrc, false);
+                }
+                return;
             }
-            return;
         }
         // Check for special tags.
         final String tag = element.getTagName();
@@ -809,7 +818,10 @@ public class AmazonKindle extends SiteScraper {
             // Return the visible text of the <body> element.
             final WebDriver frameDriver = driver.switchTo().frame(element);
             final WebElement body = frameDriver.findElement(By.tagName("body"));
-            addVisibleContent(frameDriver, body, text, imgUrlToSrc);
+            final List<WebElement> bodyChildren = body.findElements(By.xpath("./*"));
+            for (WebElement bodyChild : bodyChildren) {
+                addVisibleContent(frameDriver, bodyChild, text, imgUrlToSrc, true);
+            }
             frameDriver.switchTo().parentFrame();
             return;
         } else if ("img".equals(tag)) {
@@ -824,10 +836,9 @@ public class AmazonKindle extends SiteScraper {
                 // For illustrative (children's) books - especially cover page images.
                 url = getImageUrlFromSrc(src);
             }
-            if (imgUrlToSrc.containsKey(url)) {
-                return;
+            if (!imgUrlToSrc.containsKey(url)) {
+                imgUrlToSrc.put(url, src);
             }
-            imgUrlToSrc.put(url, src);
             return;
         } else if ("div".equals(tag)) {
             if ("page-img".equals(id)) {
@@ -846,7 +857,9 @@ public class AmazonKindle extends SiteScraper {
                     } else {
                         url = getImageUrlFromSrc(src);
                     }
-                    imgUrlToSrc.put(url, src);
+                    if (!imgUrlToSrc.containsKey(url)) {
+                        imgUrlToSrc.put(url, src);
+                    }
                     return;
                 }
             }
@@ -991,32 +1004,27 @@ public class AmazonKindle extends SiteScraper {
         return id != null && id.contains(":");
     }
 
+    private static boolean canAddChildElementContent(WebElement child) {
+        final String id = child.getAttribute("id");
+        if (isStandardId(id)) {
+            return true;
+        }
+        final String dataNid = child.getAttribute("data-nid");
+        if (isStandardId(dataNid)) {
+            return true;
+        }
+        final String tag = child.getTagName();
+        //noinspection RedundantIfStatement
+        if ("img".equals(tag) || "br".equals(tag)) {
+            return true;
+        }
+        return false;
+    }
+
     private static String getImageUrlFromSrc(String src) {
         return src.substring(Math.max(0, src.length() - 18), Math.max(0, src.length() - 12))
                 .replaceAll("/+", "")
                 .trim();
-    }
-
-    private static final Set<String> FORMATTING_TAGS = new HashSet<>();
-
-    static {
-        FORMATTING_TAGS.add("span");
-        FORMATTING_TAGS.add("a");
-        FORMATTING_TAGS.add("i");
-        FORMATTING_TAGS.add("em");
-        FORMATTING_TAGS.add("b");
-        FORMATTING_TAGS.add("strong");
-        FORMATTING_TAGS.add("s");
-        FORMATTING_TAGS.add("u");
-        FORMATTING_TAGS.add("sup");
-        FORMATTING_TAGS.add("sub");
-        FORMATTING_TAGS.add("br");
-    }
-
-    private static boolean areAllFormatting(List<WebElement> elements) {
-        return elements.stream()
-                .map(WebElement::getTagName)
-                .allMatch(FORMATTING_TAGS::contains);
     }
 
     private static final Map<Character, Integer> ID_CHAR_ORDINALITY = new HashMap<>();
