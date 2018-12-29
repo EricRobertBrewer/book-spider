@@ -24,7 +24,9 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
         public AmazonKindle newInstance(Logger logger) {
             final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
             // Add individual books here.
-            bookScrapeInfos.add(new BookScrapeInfo("my-snowman-paul", new String[]{"https://mybookcave.com/t/?u=0&b=69733&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
+//            bookScrapeInfos.add(new BookScrapeInfo("my-snowman-paul", new String[]{"https://mybookcave.com/t/?u=0&b=69733&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
+//            bookScrapeInfos.add(new BookScrapeInfo("errol-amberdane", new String[]{"https://mybookcave.com/t/?u=0&b=73560&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
+            bookScrapeInfos.add(new BookScrapeInfo("underdogs", new String[]{"https://mybookcave.com/t/?u=0&b=32294&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
             return new AmazonKindle(logger, bookScrapeInfos);
         }
 
@@ -65,6 +67,11 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
     void returnKindleUnlimitedBookTest() {
         // 'Gate 76' in Amazon Kindle Store: `https://www.amazon.com/dp/B07BD35VN6`.
         assertTrue(getScraper().returnKindleUnlimitedBook(driver, "Gate 76", EMAIL, PASSWORD));
+    }
+
+    @Test
+    void idTest() {
+        assertTrue(AmazonKindle.TEXT_ID_COMPARATOR.compare("a:2", "a:3") < 0);
     }
 
     @Override

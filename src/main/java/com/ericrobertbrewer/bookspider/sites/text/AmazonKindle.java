@@ -1026,7 +1026,7 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private static final Comparator<String> TEXT_ID_COMPARATOR = (a, b) -> {
+    static final Comparator<String> TEXT_ID_COMPARATOR = (a, b) -> {
         // For example: `a:X` < `a:p7` < `a:j9`.
         final int aColon = a.indexOf(':');
         final int bColon = b.indexOf(':');
