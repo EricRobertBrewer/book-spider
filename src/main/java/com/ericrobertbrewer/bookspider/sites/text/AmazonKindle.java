@@ -669,7 +669,9 @@ public class AmazonKindle extends SiteScraper {
         while (retries > 1) {
             try {
                 collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, true, baseWaitMillis + (maxRetries - retries) * 5000L);
-                if (text.size() > 0) {
+                // Allow books which only contain images.
+                // See `B073XQJV2L`.
+                if (text.size() > 0 || imgUrlToSrc.size() > 0) {
                     return;
                 } else {
                     // Occasionally, the text content hasn't been loaded into the page and this method will
