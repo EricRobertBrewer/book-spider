@@ -1014,8 +1014,11 @@ public class AmazonKindle extends SiteScraper {
             return true;
         }
         final String tag = child.getTagName();
-        //noinspection RedundantIfStatement
         if ("img".equals(tag) || "br".equals(tag)) {
+            return true;
+        }
+        //noinspection RedundantIfStatement
+        if ("div".equals(tag) && "content-overlays".equals(id)) {
             return true;
         }
         return false;
