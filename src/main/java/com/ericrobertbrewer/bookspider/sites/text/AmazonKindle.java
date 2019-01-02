@@ -298,18 +298,16 @@ public class AmazonKindle extends SiteScraper {
         }
         // Start collecting content.
         getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`...");
-        final Map<String, String> text = new HashMap<>();
-        final Map<String, String> imgUrlToSrc = new HashMap<>();
         try {
             // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
-            collectContentWithRetries(driver, bookId, asin, text, imgUrlToSrc, email, password, maxRetries);
+            final Content content = getContent(driver, bookId, asin, email, password, maxRetries);
             // Check whether any content has been extracted.
-            if (text.size() > 0) {
+            if (!content.isEmpty()) {
                 // Persist content once it has been totally collected.
                 getLogger().log(Level.INFO, "Writing text for book `" + bookId + "`.");
-                writeBook(textFile, text);
+                content.writeBook(textFile);
                 getLogger().log(Level.INFO, "Saving images for book `" + bookId + "`.");
-                saveImages(bookFolder, imgUrlToSrc);
+                content.saveImages(bookFolder);
                 getLogger().log(Level.INFO, "Successfully collected and saved content for book `" + bookId + "`.");
             } else {
                 getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "` after " + maxRetries + " retries. Quitting.");
@@ -662,22 +660,20 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private void collectContentWithRetries(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, int maxRetries) {
+    private Content getContent(WebDriver driver, String bookId, String asin, String email, String password, int maxRetries) {
+        final Content content = new Content();
         // Catch exceptions the first few times...
         int retries = maxRetries;
         final long baseWaitMillis = 10000L;
         while (retries > 1) {
             try {
-                collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, true, baseWaitMillis + (maxRetries - retries) * 5000L);
-                // Allow books which only contain images.
-                // See `B073XQJV2L`.
-                if (text.size() > 0 || imgUrlToSrc.size() > 0) {
-                    return;
-                } else {
-                    // Occasionally, the text content hasn't been loaded into the page and this method will
-                    // suppose that it is finished. In this case, pause, then try again.
-                    getLogger().log(Level.WARNING, "`collectContent` for book `" + bookId + "` completed without failing or extracting any text. " + retries + " retries left. Pausing, then retrying...");
+                content.collect(driver, bookId, asin, email, password, true, baseWaitMillis + (maxRetries - retries) * 5000L);
+                if (!content.isEmpty()) {
+                    return content;
                 }
+                // Occasionally, the text content hasn't been loaded into the page and this method will
+                // suppose that it is finished. In this case, pause, then try again.
+                getLogger().log(Level.WARNING, "`collectContent` for book `" + bookId + "` completed without failing or extracting any text. " + retries + " retries left. Pausing, then retrying...");
             } catch (NoSuchElementException e) {
                 getLogger().log(Level.WARNING, "Unable to find unknown element for book `" + bookId + "`.");
             } catch (Throwable t) {
@@ -686,275 +682,289 @@ public class AmazonKindle extends SiteScraper {
             retries--;
         }
         // Then fail the last time.
-        collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, true, baseWaitMillis + (maxRetries - 1) * 5000L);
+        content.collect(driver, bookId, asin, email, password, true, baseWaitMillis + (maxRetries - 1) * 5000L);
+        return content;
     }
 
-    private void collectContent(WebDriver driver, String bookId, String asin, Map<String, String> text, Map<String, String> imgUrlToSrc, String email, String password, boolean fromStart, long waitMillis) {
-        driver.navigate().to("https://read.amazon.com/?asin=" + asin);
-        DriverUtils.sleep(waitMillis);
-        final WebElement kindleReaderContainerDiv;
-        try {
-            kindleReaderContainerDiv = DriverUtils.findElementWithRetries(driver, By.id("KindleReaderContainer"), 7, 2500L);
-        } catch (NoSuchElementException e) {
-            getLogger().log(Level.WARNING, "Unable to find `KindleReaderContainer` for book `" + bookId + "`.");
-            return;
+    private class Content {
+
+        final Map<String, String> text = new HashMap<>();
+        final Map<String, String> imgUrlToSrc = new HashMap<>();
+
+        @SuppressWarnings("BooleanMethodIsAlwaysInverted")
+        boolean isEmpty() {
+            // Allow books which only contain images.
+            // See `B073XQJV2L`.
+            return text.size() == 0 && imgUrlToSrc.size() == 0;
         }
-        // Enter the first `iframe`.
-        final WebElement kindleReaderFrame;
-        try {
-            kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainerDiv, By.id("KindleReaderIFrame"), 9, 2500L);
-        } catch (NoSuchElementException e) {
-            getLogger().log(Level.WARNING, "Unable to find `KindleReaderIFrame` for book `" + bookId + "`.");
-            return;
-        }
-        final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
-        // Close the 'Sync Position' dialog, if it's open.
-        try {
-            final WebElement syncPositionDiv = readerDriver.findElement(By.id("kindleReader_dialog_syncPosition"));
-            // Click 'Make This the Furthest Read Location'.
-            final WebElement resetButton = syncPositionDiv.findElement(By.id("kindleReader_dialog_syncPosition_reset_btn"));
-            resetButton.click();
-        } catch (WebDriverException ignored) {
-        }
-        // Find the main container.
-        final WebElement bookContainerDiv = readerDriver.findElement(By.id("kindleReader_book_container"));
-        // Hide the app bars, if they are visible.
-        try {
-            final WebElement appBarOverlayDiv = bookContainerDiv.findElement(By.id("appBarOverlay"));
-            appBarOverlayDiv.click();
-        } catch (NoSuchElementException ignored) {
-        }
-        // Find the navigation arrows.
-        final WebElement touchLayerDiv;
-        try {
-            touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.id("kindleReader_touchLayer"), 3, 2500L);
-        } catch (NoSuchElementException e) {
-            getLogger().log(Level.WARNING, "Unable to find `kindleReader_touchLayer` for book `" + bookId + "`.");
-            return;
-        }
-        final WebElement sideMarginDiv = touchLayerDiv.findElement(By.id("kindleReader_sideMargin"));
-        if (fromStart) {
-            // Turn pages left as far as possible.
+
+        void collect(WebDriver driver, String bookId, String asin, String email, String password, boolean fromStart, long waitMillis) {
+            driver.navigate().to("https://read.amazon.com/?asin=" + asin);
+            DriverUtils.sleep(waitMillis);
+            final WebElement kindleReaderContainerDiv;
+            try {
+                kindleReaderContainerDiv = DriverUtils.findElementWithRetries(driver, By.id("KindleReaderContainer"), 7, 2500L);
+            } catch (NoSuchElementException e) {
+                getLogger().log(Level.WARNING, "Unable to find `KindleReaderContainer` for book `" + bookId + "`.");
+                return;
+            }
+            // Enter the first `iframe`.
+            final WebElement kindleReaderFrame;
+            try {
+                kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainerDiv, By.id("KindleReaderIFrame"), 9, 2500L);
+            } catch (NoSuchElementException e) {
+                getLogger().log(Level.WARNING, "Unable to find `KindleReaderIFrame` for book `" + bookId + "`.");
+                return;
+            }
+            final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
+            // Close the 'Sync Position' dialog, if it's open.
+            try {
+                final WebElement syncPositionDiv = readerDriver.findElement(By.id("kindleReader_dialog_syncPosition"));
+                // Click 'Make This the Furthest Read Location'.
+                final WebElement resetButton = syncPositionDiv.findElement(By.id("kindleReader_dialog_syncPosition_reset_btn"));
+                resetButton.click();
+            } catch (WebDriverException ignored) {
+            }
+            // Find the main container.
+            final WebElement bookContainerDiv = readerDriver.findElement(By.id("kindleReader_book_container"));
+            // Hide the app bars, if they are visible.
+            try {
+                final WebElement appBarOverlayDiv = bookContainerDiv.findElement(By.id("appBarOverlay"));
+                appBarOverlayDiv.click();
+            } catch (NoSuchElementException ignored) {
+            }
+            // Find the navigation arrows.
+            final WebElement touchLayerDiv;
+            try {
+                touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.id("kindleReader_touchLayer"), 3, 2500L);
+            } catch (NoSuchElementException e) {
+                getLogger().log(Level.WARNING, "Unable to find `kindleReader_touchLayer` for book `" + bookId + "`.");
+                return;
+            }
+            final WebElement sideMarginDiv = touchLayerDiv.findElement(By.id("kindleReader_sideMargin"));
+            if (fromStart) {
+                // Turn pages left as far as possible.
+                while (true) {
+                    final WebElement pageTurnAreaLeftDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaLeft"));
+                    final String className = pageTurnAreaLeftDiv.getAttribute("class");
+                    if (!className.contains("pageArrow")) {
+                        break;
+                    }
+                    pageTurnAreaLeftDiv.click();
+                }
+            }
+            // Turn pages right while extracting content.
+            final WebElement centerDiv = bookContainerDiv.findElement(By.id("kindleReader_center"));
+            final long startTime = System.currentTimeMillis();
+            int pages = 0;
             while (true) {
-                final WebElement pageTurnAreaLeftDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaLeft"));
-                final String className = pageTurnAreaLeftDiv.getAttribute("class");
-                if (!className.contains("pageArrow")) {
-                    break;
+                pages++;
+                try {
+                    final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
+                    // Extract the visible text on this page.
+                    addVisibleContent(readerDriver, contentDiv, text, imgUrlToSrc, false);
+                    // Attempt to turn the page right.
+                    final WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
+                    final String className = pageTurnAreaRightDiv.getAttribute("class");
+                    if (!className.contains("pageArrow")) {
+                        final long totalTime = System.currentTimeMillis() - startTime;
+                        getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
+                        break;
+                    }
+                    pageTurnAreaRightDiv.click();
+                } catch (StaleElementReferenceException e) {
+                    // Check to see if we have been signed out automatically.
+                    final String url = driver.getCurrentUrl();
+                    if (url.startsWith(SIGN_IN_URL_START)) {
+                        // If so, sign in again and continue collecting content from the same position in the reader.
+                        signIn(driver, email, password);
+                        collect(driver, bookId, asin, email, password, false, waitMillis);
+                    }
+                    return;
                 }
-                pageTurnAreaLeftDiv.click();
             }
         }
-        // Turn pages right while extracting content.
-        final WebElement centerDiv = bookContainerDiv.findElement(By.id("kindleReader_center"));
-        final long startTime = System.currentTimeMillis();
-        int pages = 0;
-        while (true) {
-            pages++;
-            try {
-                final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
-                // Extract the visible text on this page.
-                addVisibleContent(readerDriver, contentDiv, text, imgUrlToSrc, false);
-                // Attempt to turn the page right.
-                final WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
-                final String className = pageTurnAreaRightDiv.getAttribute("class");
-                if (!className.contains("pageArrow")) {
-                    final long totalTime = System.currentTimeMillis() - startTime;
-                    getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
-                    break;
-                }
-                pageTurnAreaRightDiv.click();
-            } catch (StaleElementReferenceException e) {
-                // Check to see if we have been signed out automatically.
-                final String url = driver.getCurrentUrl();
-                if (url.startsWith(SIGN_IN_URL_START)) {
-                    // If so, sign in again and continue collecting content from the same position in the reader.
-                    signIn(driver, email, password);
-                    collectContent(driver, bookId, asin, text, imgUrlToSrc, email, password, false, waitMillis);
-                }
+
+        void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc, boolean isBelowIframe) {
+            // Ignore hidden elements.
+            if ("hidden".equals(element.getCssValue("visibility"))) {
                 return;
             }
-        }
-    }
-
-    private void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc, boolean isBelowIframe) {
-        // Ignore hidden elements.
-        if ("hidden".equals(element.getCssValue("visibility"))) {
-            return;
-        }
-        // Ignore elements which are not displayed.
-        if ("none".equals(element.getCssValue("display"))) {
-            return;
-        }
-        // Check whether this textual element has already been scraped.
-        final String id = element.getAttribute("id");
-        if (text.containsKey(id)) {
-            return;
-        }
-        final String dataNid = element.getAttribute("data-nid");
-        if (text.containsKey(dataNid)) {
-            return;
-        }
-        // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
-        // Return the visible text of all relevant children, if any exist.
-        final List<WebElement> children = element.findElements(By.xpath("./*"));
-        if (children.size() > 0) {
-            if (isBelowIframe) {
-                if (children.stream().allMatch(AmazonKindle::canAddChildElementContent)) {
+            // Ignore elements which are not displayed.
+            if ("none".equals(element.getCssValue("display"))) {
+                return;
+            }
+            // Check whether this textual element has already been scraped.
+            final String id = element.getAttribute("id");
+            if (text.containsKey(id)) {
+                return;
+            }
+            final String dataNid = element.getAttribute("data-nid");
+            if (text.containsKey(dataNid)) {
+                return;
+            }
+            // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
+            // Return the visible text of all relevant children, if any exist.
+            final List<WebElement> children = element.findElements(By.xpath("./*"));
+            if (children.size() > 0) {
+                if (isBelowIframe) {
+                    if (children.stream().allMatch(AmazonKindle::canAddChildElementContent)) {
+                        for (WebElement child : children) {
+                            addVisibleContent(driver, child, text, imgUrlToSrc, true);
+                        }
+                        return;
+                    }
+                } else {
                     for (WebElement child : children) {
-                        addVisibleContent(driver, child, text, imgUrlToSrc, true);
+                        addVisibleContent(driver, child, text, imgUrlToSrc, false);
                     }
                     return;
                 }
-            } else {
-                for (WebElement child : children) {
-                    addVisibleContent(driver, child, text, imgUrlToSrc, false);
+            }
+            // Check for special tags.
+            final String tag = element.getTagName();
+            if ("iframe".equals(tag)) {
+                // Return the visible text of the <body> element.
+                final WebDriver frameDriver = driver.switchTo().frame(element);
+                final WebElement body = frameDriver.findElement(By.tagName("body"));
+                final List<WebElement> bodyChildren = body.findElements(By.xpath("./*"));
+                for (WebElement bodyChild : bodyChildren) {
+                    addVisibleContent(frameDriver, bodyChild, text, imgUrlToSrc, true);
+                }
+                frameDriver.switchTo().parentFrame();
+                return;
+            } else if ("img".equals(tag)) {
+                // TODO: Capture ALL images - not just ones that are leaf elements!
+                final String src = element.getAttribute("src");
+                final String url;
+                final String dataurl = element.getAttribute("dataurl");
+                if (dataurl != null) {
+                    // For primarily textual books.
+                    url = WebUtils.getLastUrlComponent(dataurl).trim();
+                } else {
+                    // For illustrative (children's) books - especially cover page images.
+                    url = getImageUrlFromSrc(src);
+                }
+                if (!imgUrlToSrc.containsKey(url)) {
+                    imgUrlToSrc.put(url, src);
                 }
                 return;
+            } else if ("div".equals(tag)) {
+                if ("page-img".equals(id)) {
+                    // Capture background images of <div> elements, common in illustrative (children's) books.
+                    final String backgroundImageValue = element.getCssValue("background-image");
+                    if (backgroundImageValue != null && !backgroundImageValue.isEmpty() && !"none".equals(backgroundImageValue)) {
+                        final String src;
+                        if (backgroundImageValue.startsWith("url(\"") && backgroundImageValue.endsWith("\")")) {
+                            src = backgroundImageValue.substring(5, backgroundImageValue.length() - 2).trim();
+                        } else {
+                            src = backgroundImageValue.trim();
+                        }
+                        final String url;
+                        if (dataNid != null) {
+                            url = dataNid.replaceAll(":", "_").trim();
+                        } else {
+                            url = getImageUrlFromSrc(src);
+                        }
+                        if (!imgUrlToSrc.containsKey(url)) {
+                            imgUrlToSrc.put(url, src);
+                        }
+                        return;
+                    }
+                }
             }
+            // Get this leaf-element's visible text.
+            final String visibleText = element.getText().trim();
+            if (visibleText.isEmpty()) {
+                return;
+            }
+            if (isStandardId(id)) {
+                text.put(id, visibleText);
+                return;
+            } else if (isStandardId(dataNid)) {
+                text.put(dataNid, visibleText);
+                return;
+            }
+            getLogger().log(Level.SEVERE, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
         }
-        // Check for special tags.
-        final String tag = element.getTagName();
-        if ("iframe".equals(tag)) {
-            // Return the visible text of the <body> element.
-            final WebDriver frameDriver = driver.switchTo().frame(element);
-            final WebElement body = frameDriver.findElement(By.tagName("body"));
-            final List<WebElement> bodyChildren = body.findElements(By.xpath("./*"));
-            for (WebElement bodyChild : bodyChildren) {
-                addVisibleContent(frameDriver, bodyChild, text, imgUrlToSrc, true);
+
+        void writeBook(File file) throws IOException {
+            final String[] ids = new ArrayList<>(text.keySet()).stream()
+                    .sorted(TEXT_ID_COMPARATOR)
+                    .toArray(String[]::new);
+            final PrintStream out = new PrintStream(file);
+            for (String id : ids) {
+                final String line = text.get(id);
+                out.println(line);
             }
-            frameDriver.switchTo().parentFrame();
-            return;
-        } else if ("img".equals(tag)) {
-            // TODO: Capture ALL images - not just ones that are leaf elements!
-            final String src = element.getAttribute("src");
-            final String url;
-            final String dataurl = element.getAttribute("dataurl");
-            if (dataurl != null) {
-                // For primarily textual books.
-                url = WebUtils.getLastUrlComponent(dataurl).trim();
-            } else {
-                // For illustrative (children's) books - especially cover page images.
-                url = getImageUrlFromSrc(src);
-            }
-            if (!imgUrlToSrc.containsKey(url)) {
-                imgUrlToSrc.put(url, src);
-            }
-            return;
-        } else if ("div".equals(tag)) {
-            if ("page-img".equals(id)) {
-                // Capture background images of <div> elements, common in illustrative (children's) books.
-                final String backgroundImageValue = element.getCssValue("background-image");
-                if (backgroundImageValue != null && !backgroundImageValue.isEmpty() && !"none".equals(backgroundImageValue)) {
-                    final String src;
-                    if (backgroundImageValue.startsWith("url(\"") && backgroundImageValue.endsWith("\")")) {
-                        src = backgroundImageValue.substring(5, backgroundImageValue.length() - 2).trim();
-                    } else {
-                        src = backgroundImageValue.trim();
-                    }
-                    final String url;
-                    if (dataNid != null) {
-                        url = dataNid.replaceAll(":", "_").trim();
-                    } else {
-                        url = getImageUrlFromSrc(src);
-                    }
-                    if (!imgUrlToSrc.containsKey(url)) {
-                        imgUrlToSrc.put(url, src);
-                    }
-                    return;
+            out.close();
+        }
+
+        void saveImages(File bookFolder) {
+            for (String url : imgUrlToSrc.keySet()) {
+                try {
+                    saveImage(bookFolder, url, imgUrlToSrc.get(url));
+                } catch (IOException e) {
+                    getLogger().log(Level.WARNING, "Encountered problem while saving image `" + url + "`.", e);
                 }
             }
         }
-        // Get this leaf-element's visible text.
-        final String visibleText = element.getText().trim();
-        if (visibleText.isEmpty()) {
-            return;
-        }
-        if (isStandardId(id)) {
-            text.put(id, visibleText);
-            return;
-        } else if (isStandardId(dataNid)) {
-            text.put(dataNid, visibleText);
-            return;
-        }
-        getLogger().log(Level.SEVERE, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
-    }
 
-    private void writeBook(File file, Map<String, String> text) throws IOException {
-        final String[] ids = new ArrayList<>(text.keySet()).stream()
-                .sorted(TEXT_ID_COMPARATOR)
-                .toArray(String[]::new);
-        final PrintStream out = new PrintStream(file);
-        for (String id : ids) {
-            final String line = text.get(id);
-            out.println(line);
-        }
-        out.close();
-    }
-
-    private void saveImages(File bookFolder, Map<String, String> imgUrlToSrc) {
-        for (String url : imgUrlToSrc.keySet()) {
-            try {
-                saveImage(bookFolder, url, imgUrlToSrc.get(url));
-            } catch (IOException e) {
-                getLogger().log(Level.WARNING, "Encountered problem while saving image `" + url + "`.", e);
+        void saveImage(File bookFolder, String url, String src) throws IOException {
+            // Ensure that the `src` attribute is a data URI.
+            // See `https://en.wikipedia.org/wiki/Data_URI_scheme#Syntax`.
+            if (!src.startsWith("data:")) {
+                return;
             }
-        }
-    }
-
-    private void saveImage(File bookFolder, String url, String src) throws IOException {
-        // Ensure that the `src` attribute is a data URI.
-        // See `https://en.wikipedia.org/wiki/Data_URI_scheme#Syntax`.
-        if (!src.startsWith("data:")) {
-            return;
-        }
-        // Check for proper syntax.
-        final int comma = src.indexOf(',');
-        if (comma == -1) {
-            return;
-        }
-        final String meta = src.substring(5, comma);
-        final String data = src.substring(comma + 1);
-        // Retrieve the MIME type.
-        final String[] metaParts = meta.split(";");
-        final String mimeType = metaParts[0];
-        // Ensure proper file extension.
-        final String fileName;
-        if (url.contains(".")) {
-            fileName = url;
-        } else if ("image/jpeg".equalsIgnoreCase(mimeType) || "image/jpg".equals(mimeType)) {
-            fileName = url + ".jpg";
-        } else if ("image/png".equalsIgnoreCase(mimeType)) {
-            fileName = url + ".png";
-        } else if ("image/gif".equalsIgnoreCase(mimeType)) {
-            fileName = url + ".gif";
-        } else if ("image/svg+xml".equalsIgnoreCase(mimeType)) {
-            fileName = url + ".svg";
-        } else if ("image/bmp".equalsIgnoreCase(mimeType)) {
-            fileName = url + ".bmp";
-        } else {
-            getLogger().log(Level.WARNING, "Found unknown MIME type `" + mimeType + "` for image `" + url + "` for book `" + bookFolder.getName() + "`.");
-            fileName = url;
-        }
-        final File imageFile = new File(bookFolder, fileName);
-        // Check if image file already exists.
-        if (imageFile.exists()) {
-            return;
-        }
-        // Retrieve the other meta data.
-        String charset = "utf-8";
-        boolean isBase64 = false;
-        for (int i = 1; i < metaParts.length; i++) {
-            if ("base64".equals(metaParts[i])) {
-                isBase64 = true;
-            } else if (metaParts[i].startsWith("charset=")) {
-                charset = metaParts[i].substring(8);
+            // Check for proper syntax.
+            final int comma = src.indexOf(',');
+            if (comma == -1) {
+                return;
             }
-        }
-        if (isBase64) {
-            final byte[] inBytes = data.getBytes(charset);
-            final byte[] outBytes = Base64.getDecoder().decode(inBytes);
-            final FileOutputStream out = new FileOutputStream(imageFile);
-            out.write(outBytes);
+            final String meta = src.substring(5, comma);
+            final String data = src.substring(comma + 1);
+            // Retrieve the MIME type.
+            final String[] metaParts = meta.split(";");
+            final String mimeType = metaParts[0];
+            // Ensure proper file extension.
+            final String fileName;
+            if (url.contains(".")) {
+                fileName = url;
+            } else if ("image/jpeg".equalsIgnoreCase(mimeType) || "image/jpg".equals(mimeType)) {
+                fileName = url + ".jpg";
+            } else if ("image/png".equalsIgnoreCase(mimeType)) {
+                fileName = url + ".png";
+            } else if ("image/gif".equalsIgnoreCase(mimeType)) {
+                fileName = url + ".gif";
+            } else if ("image/svg+xml".equalsIgnoreCase(mimeType)) {
+                fileName = url + ".svg";
+            } else if ("image/bmp".equalsIgnoreCase(mimeType)) {
+                fileName = url + ".bmp";
+            } else {
+                getLogger().log(Level.WARNING, "Found unknown MIME type `" + mimeType + "` for image `" + url + "` for book `" + bookFolder.getName() + "`.");
+                fileName = url;
+            }
+            final File imageFile = new File(bookFolder, fileName);
+            // Check if image file already exists.
+            if (imageFile.exists()) {
+                return;
+            }
+            // Retrieve the other meta data.
+            String charset = "utf-8";
+            boolean isBase64 = false;
+            for (int i = 1; i < metaParts.length; i++) {
+                if ("base64".equals(metaParts[i])) {
+                    isBase64 = true;
+                } else if (metaParts[i].startsWith("charset=")) {
+                    charset = metaParts[i].substring(8);
+                }
+            }
+            if (isBase64) {
+                final byte[] inBytes = data.getBytes(charset);
+                final byte[] outBytes = Base64.getDecoder().decode(inBytes);
+                final FileOutputStream out = new FileOutputStream(imageFile);
+                out.write(outBytes);
+            }
         }
     }
 
