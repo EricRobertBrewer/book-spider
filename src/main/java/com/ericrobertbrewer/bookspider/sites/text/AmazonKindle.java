@@ -21,6 +21,7 @@ import java.util.logging.Logger;
 
 public class AmazonKindle extends SiteScraper {
 
+    // TODO: Create an AmazonKindle database with (id, store_url, title, is_kindle_unlimited, price, last_updated).
     public interface Listener {
         boolean shouldUpdateBook(String bookId);
         void onUpdateBook(String bookId, String id, boolean isKindleUnlimited, String price);
@@ -52,7 +53,7 @@ public class AmazonKindle extends SiteScraper {
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
         if (args.length < 2 || args.length > 5) {
-            throw new IllegalArgumentException("Usage: <email> <password> [threads] [max-retries] [force]");
+            throw new IllegalArgumentException("Usage: <email> <password> [threads=1] [max-retries=1] [force=false]");
         }
         // Collect arguments.
         final String email = args[0];
