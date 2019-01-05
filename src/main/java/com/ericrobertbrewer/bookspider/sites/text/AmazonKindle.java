@@ -762,7 +762,7 @@ public class AmazonKindle extends SiteScraper {
                 try {
                     final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
                     // Extract the visible text on this page.
-                    addVisibleContent(readerDriver, contentDiv, text, imgUrlToSrc, false);
+                    addVisibleContent(readerDriver, contentDiv, false);
                     // Attempt to turn the page right.
                     final WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
                     final String className = pageTurnAreaRightDiv.getAttribute("class");
@@ -785,7 +785,7 @@ public class AmazonKindle extends SiteScraper {
             }
         }
 
-        void addVisibleContent(WebDriver driver, WebElement element, Map<String, String> text, Map<String, String> imgUrlToSrc, boolean isBelowIframe) {
+        void addVisibleContent(WebDriver driver, WebElement element, boolean isBelowIframe) {
             // Ignore hidden elements.
             if ("hidden".equals(element.getCssValue("visibility"))) {
                 return;
@@ -810,13 +810,13 @@ public class AmazonKindle extends SiteScraper {
                 if (isBelowIframe) {
                     if (children.stream().allMatch(AmazonKindle::canAddChildElementContent)) {
                         for (WebElement child : children) {
-                            addVisibleContent(driver, child, text, imgUrlToSrc, true);
+                            addVisibleContent(driver, child, true);
                         }
                         return;
                     }
                 } else {
                     for (WebElement child : children) {
-                        addVisibleContent(driver, child, text, imgUrlToSrc, false);
+                        addVisibleContent(driver, child, false);
                     }
                     return;
                 }
@@ -829,7 +829,7 @@ public class AmazonKindle extends SiteScraper {
                 final WebElement body = frameDriver.findElement(By.tagName("body"));
                 final List<WebElement> bodyChildren = body.findElements(By.xpath("./*"));
                 for (WebElement bodyChild : bodyChildren) {
-                    addVisibleContent(frameDriver, bodyChild, text, imgUrlToSrc, true);
+                    addVisibleContent(frameDriver, bodyChild, true);
                 }
                 frameDriver.switchTo().parentFrame();
                 return;
