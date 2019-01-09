@@ -687,10 +687,52 @@ public class AmazonKindle extends SiteScraper {
         return content;
     }
 
+    boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
+        // Navigate to the 'Content and Devices' account page, showing only borrowed books.
+        driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksBorrows/dateDsc/");
+        DriverUtils.sleep(1000L);
+        final WebElement aPageDiv = driver.findElement(By.id("a-page"));
+        final WebElement ngAppDiv;
+        try {
+            ngAppDiv = aPageDiv.findElement(By.id("ng-app"));
+        } catch (NoSuchElementException e) {
+            // Check to see if we have been signed out automatically.
+            final String url = driver.getCurrentUrl();
+            if (url.startsWith(SIGN_IN_URL_START)) {
+                // If so, sign in again and try to return the book again.
+                signIn(driver, email, password);
+                return returnKindleUnlimitedBook(driver, title, email, password);
+            }
+            return false;
+        }
+        // Return the book with the given title by clicking [...] (Actions column) -> [Return book] -> [Yes]
+        final WebElement contentAppDiv = DriverUtils.findElementWithRetries(ngAppDiv, By.className("contentApp_myx"), 3, 2500L);
+        final WebElement contentContainerDiv = contentAppDiv.findElement(By.className("contentContainer_myx"));
+        final WebElement contentTableListDiv = contentContainerDiv.findElement(By.className("contentTableList_myx"));
+        final WebElement gridUl = contentTableListDiv.findElement(By.tagName("ul"));
+        final List<WebElement> lis = gridUl.findElements(By.tagName("li"));
+        for (int i = 0; i < lis.size(); i++) {
+            final WebElement li = lis.get(i);
+            final WebElement titleDiv = li.findElement(By.id("title" + i));
+            final String titleText = titleDiv.getText().trim();
+            if (title.equalsIgnoreCase(titleText)) {
+                final WebElement button = li.findElement(By.tagName("button"));
+                button.click(); // [...]
+                final WebElement returnLoanDiv = DriverUtils.findElementWithRetries(li, By.id("contentAction_returnLoan_myx"), 3, 2500L);
+                returnLoanDiv.click(); // [Return book]
+                final WebElement popoverModalDiv = driver.findElement(By.className("myx-popover-modal"));
+                final WebElement okButton = popoverModalDiv.findElement(By.id("dialogButton_ok_myx "));  // Apparently there is a space there!
+                okButton.click(); // [Yes]
+                return true;
+            }
+        }
+        return false;
+    }
+
     private class Content {
 
-        final Map<String, String> idToText = new HashMap<>();
-        final Map<String, String> imgUrlToSrc = new HashMap<>();
+        private final Map<String, String> idToText = new HashMap<>();
+        private final Map<String, String> imgUrlToSrc = new HashMap<>();
 
         @SuppressWarnings("BooleanMethodIsAlwaysInverted")
         boolean isEmpty() {
@@ -786,7 +828,7 @@ public class AmazonKindle extends SiteScraper {
             }
         }
 
-        void addVisibleContent(WebDriver driver, WebElement element, boolean isBelowIframe) {
+        private void addVisibleContent(WebDriver driver, WebElement element, boolean isBelowIframe) {
             // Ignore hidden elements.
             if ("hidden".equals(element.getCssValue("visibility"))) {
                 return;
@@ -809,7 +851,7 @@ public class AmazonKindle extends SiteScraper {
             final List<WebElement> children = element.findElements(By.xpath("./*"));
             if (children.size() > 0) {
                 if (isBelowIframe) {
-                    if (children.stream().allMatch(AmazonKindle::canAddChildElementContent)) {
+                    if (children.stream().allMatch(this::canAddChildElementContent)) {
                         for (WebElement child : children) {
                             addVisibleContent(driver, child, true);
                         }
@@ -887,6 +929,36 @@ public class AmazonKindle extends SiteScraper {
                 return;
             }
             getLogger().log(Level.SEVERE, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
+        }
+
+        private boolean isStandardId(String id) {
+            return id != null && id.contains(":");
+        }
+
+        private boolean canAddChildElementContent(WebElement child) {
+            final String id = child.getAttribute("id");
+            if (isStandardId(id)) {
+                return true;
+            }
+            final String dataNid = child.getAttribute("data-nid");
+            if (isStandardId(dataNid)) {
+                return true;
+            }
+            final String tag = child.getTagName();
+            if ("img".equals(tag) || "br".equals(tag)) {
+                return true;
+            }
+            //noinspection RedundantIfStatement
+            if ("div".equals(tag) && "content-overlays".equals(id)) {
+                return true;
+            }
+            return false;
+        }
+
+        private String getImageUrlFromSrc(String src) {
+            return src.substring(Math.max(0, src.length() - 18), Math.max(0, src.length() - 12))
+                    .replaceAll("/+", "")
+                    .trim();
         }
 
         void writeBook(File file) throws IOException {
@@ -967,78 +1039,6 @@ public class AmazonKindle extends SiteScraper {
                 out.write(outBytes);
             }
         }
-    }
-
-    boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
-        // Navigate to the 'Content and Devices' account page, showing only borrowed books.
-        driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksBorrows/dateDsc/");
-        DriverUtils.sleep(1000L);
-        final WebElement aPageDiv = driver.findElement(By.id("a-page"));
-        final WebElement ngAppDiv;
-        try {
-            ngAppDiv = aPageDiv.findElement(By.id("ng-app"));
-        } catch (NoSuchElementException e) {
-            // Check to see if we have been signed out automatically.
-            final String url = driver.getCurrentUrl();
-            if (url.startsWith(SIGN_IN_URL_START)) {
-                // If so, sign in again and try to return the book again.
-                signIn(driver, email, password);
-                return returnKindleUnlimitedBook(driver, title, email, password);
-            }
-            return false;
-        }
-         // Return the book with the given title by clicking [...] (Actions column) -> [Return book] -> [Yes]
-        final WebElement contentAppDiv = DriverUtils.findElementWithRetries(ngAppDiv, By.className("contentApp_myx"), 3, 2500L);
-        final WebElement contentContainerDiv = contentAppDiv.findElement(By.className("contentContainer_myx"));
-        final WebElement contentTableListDiv = contentContainerDiv.findElement(By.className("contentTableList_myx"));
-        final WebElement gridUl = contentTableListDiv.findElement(By.tagName("ul"));
-        final List<WebElement> lis = gridUl.findElements(By.tagName("li"));
-        for (int i = 0; i < lis.size(); i++) {
-            final WebElement li = lis.get(i);
-            final WebElement titleDiv = li.findElement(By.id("title" + i));
-            final String titleText = titleDiv.getText().trim();
-            if (title.equalsIgnoreCase(titleText)) {
-                final WebElement button = li.findElement(By.tagName("button"));
-                button.click(); // [...]
-                final WebElement returnLoanDiv = DriverUtils.findElementWithRetries(li, By.id("contentAction_returnLoan_myx"), 3, 2500L);
-                returnLoanDiv.click(); // [Return book]
-                final WebElement popoverModalDiv = driver.findElement(By.className("myx-popover-modal"));
-                final WebElement okButton = popoverModalDiv.findElement(By.id("dialogButton_ok_myx "));  // Apparently there is a space there!
-                okButton.click(); // [Yes]
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private static boolean isStandardId(String id) {
-        return id != null && id.contains(":");
-    }
-
-    private static boolean canAddChildElementContent(WebElement child) {
-        final String id = child.getAttribute("id");
-        if (isStandardId(id)) {
-            return true;
-        }
-        final String dataNid = child.getAttribute("data-nid");
-        if (isStandardId(dataNid)) {
-            return true;
-        }
-        final String tag = child.getTagName();
-        if ("img".equals(tag) || "br".equals(tag)) {
-            return true;
-        }
-        //noinspection RedundantIfStatement
-        if ("div".equals(tag) && "content-overlays".equals(id)) {
-            return true;
-        }
-        return false;
-    }
-
-    private static String getImageUrlFromSrc(String src) {
-        return src.substring(Math.max(0, src.length() - 18), Math.max(0, src.length() - 12))
-                .replaceAll("/+", "")
-                .trim();
     }
 
     private static final Map<Character, Integer> ID_CHAR_ORDINALITY = new HashMap<>();
