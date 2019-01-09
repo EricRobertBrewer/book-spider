@@ -689,14 +689,14 @@ public class AmazonKindle extends SiteScraper {
 
     private class Content {
 
-        final Map<String, String> text = new HashMap<>();
+        final Map<String, String> idToText = new HashMap<>();
         final Map<String, String> imgUrlToSrc = new HashMap<>();
 
         @SuppressWarnings("BooleanMethodIsAlwaysInverted")
         boolean isEmpty() {
             // Allow books which only contain images.
             // See `B073XQJV2L`.
-            return text.size() == 0 && imgUrlToSrc.size() == 0;
+            return idToText.size() == 0 && imgUrlToSrc.size() == 0;
         }
 
         void collect(WebDriver driver, String bookId, String asin, String email, String password, boolean fromStart, long waitMillis) {
@@ -797,11 +797,11 @@ public class AmazonKindle extends SiteScraper {
             }
             // Check whether this textual element has already been scraped.
             final String id = element.getAttribute("id");
-            if (text.containsKey(id)) {
+            if (idToText.containsKey(id)) {
                 return;
             }
             final String dataNid = element.getAttribute("data-nid");
-            if (text.containsKey(dataNid)) {
+            if (idToText.containsKey(dataNid)) {
                 return;
             }
             // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
@@ -880,22 +880,22 @@ public class AmazonKindle extends SiteScraper {
                 return;
             }
             if (isStandardId(id)) {
-                text.put(id, visibleText);
+                idToText.put(id, visibleText);
                 return;
             } else if (isStandardId(dataNid)) {
-                text.put(dataNid, visibleText);
+                idToText.put(dataNid, visibleText);
                 return;
             }
             getLogger().log(Level.SEVERE, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
         }
 
         void writeBook(File file) throws IOException {
-            final String[] ids = new ArrayList<>(text.keySet()).stream()
+            final String[] ids = new ArrayList<>(idToText.keySet()).stream()
                     .sorted(TEXT_ID_COMPARATOR)
                     .toArray(String[]::new);
             final PrintStream out = new PrintStream(file);
             for (String id : ids) {
-                final String line = text.get(id);
+                final String line = idToText.get(id);
                 out.println(line);
             }
             out.close();
