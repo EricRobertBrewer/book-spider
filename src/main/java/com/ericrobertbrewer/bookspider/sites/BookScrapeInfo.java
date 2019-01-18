@@ -1,4 +1,4 @@
-package com.ericrobertbrewer.bookspider;
+package com.ericrobertbrewer.bookspider.sites;
 
 public class BookScrapeInfo {
 

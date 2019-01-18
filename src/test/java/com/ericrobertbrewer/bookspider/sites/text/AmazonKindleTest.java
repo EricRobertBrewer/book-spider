@@ -1,7 +1,7 @@
 package com.ericrobertbrewer.bookspider.sites.text;
 
-import com.ericrobertbrewer.bookspider.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Folders;
+import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.bookspider.sites.SiteScraperTest;
 import org.junit.jupiter.api.AfterEach;

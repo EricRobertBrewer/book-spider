@@ -1,7 +1,7 @@
 package com.ericrobertbrewer.bookspider.sites.text;
 
-import com.ericrobertbrewer.bookspider.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Launcher;
+import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.web.dl.FileDownloadInfo;
 import com.ericrobertbrewer.web.dl.FileDownloader;
