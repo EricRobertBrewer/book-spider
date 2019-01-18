@@ -21,10 +21,16 @@ import java.util.logging.Logger;
 
 public class AmazonKindle extends SiteScraper {
 
-    // TODO: Create an AmazonKindle database with (id, store_url, title, is_kindle_unlimited, price, last_updated).
     public interface Listener {
         boolean shouldUpdateBook(String bookId);
-        void onUpdateBook(String bookId, String id, boolean isKindleUnlimited, String price);
+        void onUpdateBook(String bookId, String asin, boolean isKindleUnlimited, String price);
+    }
+
+    public static class Book {
+        public String asin = null;
+        public boolean isKindleUnlimited = false;
+        public String price = null;
+        public long lastUpdated = -1L;
     }
 
     public static boolean isPriceFree(String price) {

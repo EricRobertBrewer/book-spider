@@ -1,10 +1,10 @@
 package com.ericrobertbrewer.bookspider.sites.meta;
 
-import com.ericrobertbrewer.bookspider.AbstractDatabaseHelper;
 import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
+import com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper;
 import com.ericrobertbrewer.bookspider.sites.text.AmazonKindle;
 import com.ericrobertbrewer.bookspider.sites.text.AmazonPreview;
 import com.ericrobertbrewer.web.WebUtils;
@@ -15,10 +15,7 @@ import org.openqa.selenium.NoSuchElementException;
 
 import java.io.*;
 import java.nio.file.Files;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Level;
@@ -44,7 +41,42 @@ public class BookCave extends SiteScraper {
         });
     }
 
-    private static final String CONTENTS_DATABASE_FILE_NAME = Folders.getContentFolderName(Folders.ID_BOOKCAVE) + Folders.SLASH + "contents.db";
+    public static class Book {
+        public String id;
+        public String title;
+        public String authors;
+        public String summary;
+        public String description = null;
+        public int communityRatingsCount;
+        public String communityAverageRating = null;
+        public int pages = -1;
+        public String genres;
+        public String amazonKindleUrl = null;
+        public String amazonPrintUrl = null;
+        public String audibleUrl = null;
+        public String appleBooksUrl = null;
+        public String barnesAndNobleUrl = null;
+        public String barnesAndNobleAudiobookUrl = null;
+        public String barnesAndNoblePrintUrl = null;
+        public String googlePlayUrl = null;
+        public String koboUrl = null;
+        public String smashwordsUrl = null;
+        public long lastUpdated;
+        public String asin = null;
+    }
+
+    public static class BookRating {
+        public String bookId;
+        public String rating;
+        public int count;
+    }
+
+    public static class BookRatingLevel {
+        public String bookId;
+        public String rating;
+        public String title;
+        public int count;
+    }
 
     private final AtomicBoolean isExploringFrontier = new AtomicBoolean(false);
     private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
@@ -100,7 +132,7 @@ public class BookCave extends SiteScraper {
         final Thread scrapeThread = new Thread(() -> {
             isScrapingBooks.set(true);
             final WebDriver scrapeDriver = factory.newInstance();
-            databaseHelper.connect(CONTENTS_DATABASE_FILE_NAME);
+            databaseHelper.connectToContentsDatabase();
             try {
                 scrapeBooks(scrapeDriver, frontier, databaseHelper);
             } catch (Throwable t) {
@@ -212,6 +244,17 @@ public class BookCave extends SiteScraper {
                 continue;
             }
             final String bookId = frontier.poll();
+            // Ignore books which are fresh enough.
+            try {
+                if (!shouldUpdateBook(databaseHelper, bookId)) {
+                    continue;
+                }
+            } catch (SQLException e) {
+                getLogger().log(Level.SEVERE, "Unable to find book `" + bookId + "` during `shouldUpdateBook()`.", e);
+                // It's safer to skip this book than to scrape its metadata.
+                continue;
+            }
+            // Try scraping the metadata of the book with a fixed number retries.
             int retries = 3;
             while (retries > 0) {
                 try {
@@ -223,12 +266,8 @@ public class BookCave extends SiteScraper {
                     getLogger().log(Level.WARNING, "Unable to find web element for book `" + bookId + "`.", e);
                 } catch (TimeoutException e) {
                     getLogger().log(Level.WARNING, "Received timeout while scraping book `" + bookId + "`.", e);
-                    try {
-                        // Give the site 10 seconds to recover.
-                        Thread.sleep(10000L);
-                    } catch (InterruptedException ie) {
-                        ie.printStackTrace();
-                    }
+                    // Give the site 10 seconds to recover.
+                    DriverUtils.sleep(10000L);
                 }
                 retries--;
             }
@@ -236,11 +275,16 @@ public class BookCave extends SiteScraper {
         getLogger().log(Level.INFO, "Done scraping details.");
     }
 
-    private void scrapeBook(WebDriver driver, String bookId, DatabaseHelper databaseHelper) throws SQLException, NoSuchElementException {
-        // Ignore books which are fresh enough.
-        if (!databaseHelper.shouldUpdateBook(bookId)) {
-            return;
+    private boolean shouldUpdateBook(DatabaseHelper databaseHelper, String id) throws SQLException {
+        // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
+        //noinspection RedundantIfStatement
+        if (databaseHelper.recordExists(DatabaseHelper.TABLE_BOOKCAVE_BOOKS, "id", id)) {
+            return false;
         }
+        return true;
+    }
+
+    private void scrapeBook(WebDriver driver, String bookId, DatabaseHelper databaseHelper) throws SQLException, NoSuchElementException {
         // Scrape this book.
         getLogger().log(Level.INFO, "Scraping book: `" + bookId + "`.");
         driver.navigate().to("https://mybookcave.com/mybookratings/rated-book/" + bookId + "/");
@@ -417,18 +461,18 @@ public class BookCave extends SiteScraper {
         // Set the time when this book was last updated.
         book.lastUpdated = System.currentTimeMillis();
         // Add the book, book ratings, and book rating levels to the database.
-        final int bookResult = databaseHelper.insertBook(book);
+        final int bookResult = databaseHelper.insert(book);
         if (bookResult != 1) {
             getLogger().log(Level.WARNING, "Unusual database response `" + bookResult + "` when inserting book `" + bookId + "`.");
         }
         for (BookRating rating : ratings) {
-            final int ratingResult = databaseHelper.insertBookRating(rating);
+            final int ratingResult = databaseHelper.insert(rating);
             if (ratingResult != 1) {
                 getLogger().log(Level.WARNING, "Unusual database response `" + ratingResult + "` when inserting book rating `" + bookId + ":" + rating.rating + "`.");
             }
         }
         for (BookRatingLevel level : levels) {
-            final int levelResult = databaseHelper.insertBookRatingLevel(level);
+            final int levelResult = databaseHelper.insert(level);
             if (levelResult != 1) {
                 getLogger().log(Level.WARNING, "Unusual database response `" + levelResult + "` when inserting book rating level `" + bookId + ":" + level.rating + ":" + level.title + "`.");
             }
@@ -507,262 +551,7 @@ public class BookCave extends SiteScraper {
         return true;
     }
 
-    private static class Book {
-        String id;
-        String title;
-        String authors;
-        String summary;
-        String description = null;
-        int communityRatingsCount;
-        String communityAverageRating = null;
-        int pages = -1;
-        String genres;
-        String amazonKindleUrl = null;
-        String amazonPrintUrl = null;
-        String audibleUrl = null;
-        String appleBooksUrl = null;
-        String barnesAndNobleUrl = null;
-        String barnesAndNobleAudiobookUrl = null;
-        String barnesAndNoblePrintUrl = null;
-        String googlePlayUrl = null;
-        String koboUrl = null;
-        String smashwordsUrl = null;
-        long lastUpdated;
-        String amazonId = null;
-        boolean amazonIsKindleUnlimited = false;
-        String amazonPrice = null;
-        long amazonLastUpdated = -1L;
-
-        private Book() {
-        }
-    }
-
-    private static class BookRating {
-        String bookId;
-        String rating;
-        int count;
-
-        private BookRating() {
-        }
-    }
-
-    private static class BookRatingLevel {
-        String bookId;
-        String rating;
-        String title;
-        int count;
-
-        private BookRatingLevel() {
-        }
-    }
-
-    private static class DatabaseHelper extends AbstractDatabaseHelper {
-        private static final String TABLE_BOOKS = "Books";
-        private static final String TABLE_BOOK_RATINGS = "BookRatings";
-        private static final String TABLE_BOOK_RATING_LEVELS = "BookRatingLevels";
-
-        private DatabaseHelper(Logger logger) {
-            super(logger);
-        }
-
-        private boolean shouldUpdateBook(String id) throws SQLException {
-            // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
-            return !bookExists(id);
-        }
-
-        private boolean bookExists(String id) throws SQLException {
-            return recordExists(TABLE_BOOKS, "id", id);
-        }
-
-        private int insertBook(Book book) throws SQLException {
-            createTableIfNeeded(TABLE_BOOKS);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKS + "(" +
-                    "id,title,authors,summary,description," +
-                    "community_ratings_count,community_average_rating,pages,genres,amazon_kindle_url," +
-                    "amazon_print_url,audible_url,apple_books_url,barnes_and_noble_url,barnes_and_noble_audiobook_url," +
-                    "barnes_and_noble_print_url,google_play_url,kobo_url,smashwords_url,last_updated" +
-                    ")  VALUES(" +
-                    "?,?,?,?,?," +
-                    "?,?,?,?,?," +
-                    "?,?,?,?,?," +
-                    "?,?,?,?,?);");
-            insert.setString(1, book.id);
-            insert.setString(2, book.title);
-            insert.setString(3, book.authors);
-            insert.setString(4, book.summary);
-            setStringOrNull(insert, 5, book.description);
-            insert.setInt(6, book.communityRatingsCount);
-            setStringOrNull(insert, 7, book.communityAverageRating);
-            setIntOrNull(insert, 8, book.pages, -1);
-            insert.setString(9, book.genres);
-            setStringOrNull(insert, 10, book.amazonKindleUrl);
-            setStringOrNull(insert, 11, book.amazonPrintUrl);
-            setStringOrNull(insert, 12, book.audibleUrl);
-            setStringOrNull(insert, 13, book.appleBooksUrl);
-            setStringOrNull(insert, 14, book.barnesAndNobleUrl);
-            setStringOrNull(insert, 15, book.barnesAndNobleAudiobookUrl);
-            setStringOrNull(insert, 16, book.barnesAndNoblePrintUrl);
-            setStringOrNull(insert, 17, book.googlePlayUrl);
-            setStringOrNull(insert, 18, book.koboUrl);
-            setStringOrNull(insert, 19, book.smashwordsUrl);
-            insert.setLong(20, book.lastUpdated);
-            final int result = insert.executeUpdate();
-            insert.close();
-            return result;
-        }
-
-        private int insertBookRating(BookRating rating) throws SQLException {
-            createTableIfNeeded(TABLE_BOOK_RATINGS);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_RATINGS +
-                    "(book_id,rating,count)\n" +
-                    " VALUES(?,?,?);");
-            insert.setString(1, rating.bookId);
-            insert.setString(2, rating.rating);
-            insert.setInt(3, rating.count);
-            final int result = insert.executeUpdate();
-            insert.close();
-            return result;
-        }
-
-        private int insertBookRatingLevel(BookRatingLevel level) throws SQLException {
-            createTableIfNeeded(TABLE_BOOK_RATING_LEVELS);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_RATING_LEVELS +
-                    "(book_id,rating,title,count)\n" +
-                    " VALUES(?,?,?,?);");
-            insert.setString(1, level.bookId);
-            insert.setString(2, level.rating);
-            insert.setString(3, level.title);
-            insert.setInt(4, level.count);
-            final int result = insert.executeUpdate();
-            insert.close();
-            return result;
-        }
-
-        private Book makeBookFromResult(ResultSet result) throws SQLException {
-            final Book book = new Book();
-            book.id = result.getString("id");
-            book.title = result.getString("title");
-            book.authors = result.getString("authors");
-            book.summary = result.getString("summary");
-            book.description = result.getString("description");
-            book.communityRatingsCount = result.getInt("community_ratings_count");
-            book.communityAverageRating = result.getString("community_average_rating");
-            book.pages = getIntOrNull(result, "pages", -1);
-            book.genres = result.getString("genres");
-            book.amazonKindleUrl = result.getString("amazon_kindle_url");
-            book.amazonPrintUrl = result.getString("amazon_print_url");
-            book.audibleUrl = result.getString("audible_url");
-            book.appleBooksUrl = result.getString("apple_books_url");
-            book.barnesAndNobleUrl = result.getString("barnes_and_noble_url");
-            book.barnesAndNobleAudiobookUrl = result.getString("barnes_and_noble_audiobook_url");
-            book.barnesAndNoblePrintUrl = result.getString("barnes_and_noble_print_url");
-            book.googlePlayUrl = result.getString("google_play_url");
-            book.koboUrl = result.getString("kobo_url");
-            book.smashwordsUrl = result.getString("smashwords_url");
-            book.lastUpdated = result.getLong("last_updated");
-            book.amazonId = result.getString("amazon_id");
-            book.amazonIsKindleUnlimited = result.getBoolean("amazon_is_kindle_unlimited");
-            book.amazonPrice = result.getString("amazon_price");
-            book.amazonLastUpdated = getLongOrNull(result, "amazon_last_updated", -1L);
-            return book;
-        }
-
-        private Book getBook(String id) throws SQLException {
-            final PreparedStatement select = getConnection().prepareStatement("SELECT * FROM " + TABLE_BOOKS +
-                    " WHERE id=?;");
-            select.setString(1, id);
-            final ResultSet result = select.executeQuery();
-            if (!result.next()) {
-                return null;
-            }
-            final Book book = makeBookFromResult(result);
-            select.close();
-            return book;
-        }
-
-        private List<Book> getBooks() throws SQLException {
-            final List<Book> books = new ArrayList<>();
-            final Statement select = getConnection().createStatement();
-            final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_BOOKS + ";");
-            while (result.next()) {
-                final Book book = makeBookFromResult(result);
-                books.add(book);
-            }
-            select.close();
-            return Collections.unmodifiableList(books);
-        }
-
-        @Override
-        public void createTableIfNeeded(String name) throws SQLException {
-            if (TABLE_BOOKS.equalsIgnoreCase(name)) {
-                final Statement create = getConnection().createStatement();
-                create.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (" +
-                        "id TEXT PRIMARY KEY" + // the-haunting-of-gillespie-house
-                        ", title TEXT NOT NULL" + // The Haunting of Gillespie House
-                        ", authors TEXT NOT NULL" + // Darcy Coates
-                        ", summary TEXT NOT NULL" + // Elle is thrilled to spend a month minding the beautiful Gillespie property...
-                        ", description TEXT DEFAULT NULL" + // Elle is thrilled to spend a month minding the beautiful Gillespie property...
-                        ", community_ratings_count INTEGER NOT NULL" + // 1
-                        ", community_average_rating TEXT DEFAULT NULL" + // Moderate
-                        ", pages INTEGER DEFAULT NULL" + // 200
-                        ", genres TEXT DEFAULT NULL" + // Fiction/Horror
-                        ", amazon_kindle_url TEXT DEFAULT NULL" + // https://...
-                        ", amazon_print_url TEXT DEFAULT NULL" + // https://...
-                        ", audible_url TEXT DEFAULT NULL" + // https://...
-                        ", apple_books_url TEXT DEFAULT NULL" + // https://...
-                        ", barnes_and_noble_url TEXT DEFAULT NULL" + // https://...
-                        ", barnes_and_noble_audiobook_url TEXT DEFAULT NULL" + // https://...
-                        ", barnes_and_noble_print_url TEXT DEFAULT NULL" + // https://...
-                        ", google_play_url TEXT DEFAULT NULL" + // https://...
-                        ", kobo_url TEXT DEFAULT NULL" + // https://...
-                        ", smashwords_url TEXT DEFAULT NULL" + // https://...
-                        ", last_updated INTEGER NOT NULL" + // System.currentTimeMillis() -> long
-                        ", amazon_id TEXT DEFAULT NULL" +
-                        ", amazon_is_kindle_unlimited BOOLEAN DEFAULT 0" +
-                        ", amazon_price TEXT DEFAULT NULL" +
-                        ", amazon_last_updated INTEGER DEFAULT NULL" +
-                        ");");
-            } else if (TABLE_BOOK_RATINGS.equalsIgnoreCase(name)) {
-                final Statement create = getConnection().createStatement();
-                create.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_RATINGS + " (" +
-                        "book_id TEXT NOT NULL" +
-                        ", rating TEXT NOT NULL" +
-                        ", count INTEGER NOT NULL" +
-                        ", PRIMARY KEY (book_id, rating)" +
-                        ");");
-            } else if (TABLE_BOOK_RATING_LEVELS.equalsIgnoreCase(name)) {
-                final Statement create = getConnection().createStatement();
-                create.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_RATING_LEVELS + " (" +
-                        "book_id TEXT NOT NULL" +
-                        ", rating TEXT NOT NULL" +
-                        ", title TEXT NOT NULL" +
-                        ", count INTEGER NOT NULL" +
-                        ", PRIMARY KEY (book_id, rating, title)" +
-                        ");");
-            } else {
-                throw new IllegalArgumentException("Unknown table name: `" + name + "`.");
-            }
-        }
-
-        private int updateBookAmazonFields(String bookId, String id, boolean isKindleUnlimited, String price) throws SQLException {
-            final PreparedStatement update = getConnection().prepareStatement("UPDATE " + DatabaseHelper.TABLE_BOOKS + " SET " +
-                    "amazon_id=?" +
-                    ", amazon_is_kindle_unlimited=?" +
-                    ", amazon_price=?" +
-                    ", amazon_last_updated=?" +
-                    " WHERE id=?;");
-            update.setString(1, id);
-            update.setBoolean(2, isKindleUnlimited);
-            setStringOrNull(update, 3, price);
-            update.setLong(4, System.currentTimeMillis());
-            update.setString(5, bookId);
-            final int result = update.executeUpdate();
-            update.close();
-            return result;
-        }
-    }
-
-    private static List<BookScrapeInfo> getBookScrapeInfos(List<Book> books) {
+    private static List<BookScrapeInfo> getBookScrapeInfos(DatabaseHelper databaseHelper, List<Book> books) {
         final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
         for (Book book : books) {
             // Skip unattainable books.
@@ -780,7 +569,15 @@ public class BookCave extends SiteScraper {
                 // See `https://mybookcave.com/mybookratings/rated-book/the-warriors-path/`.
                 urls = new String[]{book.amazonKindleUrl, book.amazonPrintUrl};
             }
-            bookScrapeInfos.add(new BookScrapeInfo(book.id, urls, book.amazonPrice));
+            String price = null;
+            if (book.asin != null) {
+                try {
+                    final AmazonKindle.Book amazonBook = databaseHelper.getAmazonBook(book.asin);
+                    price = amazonBook.price;
+                } catch (SQLException ignored) {
+                }
+            }
+            bookScrapeInfos.add(new BookScrapeInfo(book.id, urls, price));
         }
         return bookScrapeInfos;
     }
@@ -795,16 +592,16 @@ public class BookCave extends SiteScraper {
         @Override
         public AmazonPreview newInstance(Logger logger) {
             final DatabaseHelper databaseHelper = new DatabaseHelper(logger);
-            databaseHelper.connect(CONTENTS_DATABASE_FILE_NAME);
+            databaseHelper.connectToContentsDatabase();
             final List<Book> allBooks;
             try {
-                allBooks = databaseHelper.getBooks();
+                allBooks = databaseHelper.getBookCaveBooks();
             } catch (SQLException e) {
                 throw new RuntimeException("Unable to retrieve books.", e);
             } finally {
                 databaseHelper.close();
             }
-            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
+            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(databaseHelper, allBooks);
             return new AmazonPreview(logger, bookScrapeInfos);
         }
 
@@ -830,14 +627,14 @@ public class BookCave extends SiteScraper {
         @Override
         public AmazonKindle newInstance(Logger logger) {
             databaseHelper = new DatabaseHelper(logger);
-            databaseHelper.connect(CONTENTS_DATABASE_FILE_NAME);
+            databaseHelper.connectToContentsDatabase();
             final List<Book> allBooks;
             try {
-                allBooks = databaseHelper.getBooks();
+                allBooks = databaseHelper.getBookCaveBooks();
             } catch (SQLException e) {
                 throw new RuntimeException("Unable to retrieve books.", e);
             }
-            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
+            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(databaseHelper, allBooks);
             final AmazonKindle amazonKindle = new AmazonKindle(logger, bookScrapeInfos);
             amazonKindle.setListener(this);
             return amazonKindle;
@@ -858,7 +655,7 @@ public class BookCave extends SiteScraper {
         public boolean shouldUpdateBook(String bookId) {
             final Book book;
             try {
-                book = databaseHelper.getBook(bookId);
+                book = databaseHelper.getBookCaveBook(bookId);
             } catch (SQLException e) {
                 databaseHelper.getLogger().log(Level.SEVERE, "Encountered error while retrieving book `" + bookId + "` from database.", e);
                 return false;
@@ -867,23 +664,49 @@ public class BookCave extends SiteScraper {
                 databaseHelper.getLogger().log(Level.SEVERE, "Unable to retrieve book `" + bookId + "` from database.");
                 return false;
             }
-            if (book.amazonId == null) {
+            if (book.asin == null) {
                 return true;
             }
-            return !book.amazonIsKindleUnlimited &&
-                    !AmazonKindle.isPriceFree(book.amazonPrice) &&
-                    System.currentTimeMillis() - book.amazonLastUpdated > CHECK_AMAZON_PRICE_DELAY_MILLIS;
+            final AmazonKindle.Book amazonBook;
+            try {
+                amazonBook = databaseHelper.getAmazonBook(book.asin);
+            } catch (SQLException e) {
+                databaseHelper.getLogger().log(Level.SEVERE, "Encountered error while retrieving Amazon book `asin=" + book.asin + "` from database.", e);
+                return false;
+            }
+            if (amazonBook == null) {
+                databaseHelper.getLogger().log(Level.SEVERE, "Unable to retrieveAmazon book `asin=" + book.asin + "` from database.");
+                return false;
+            }
+            return !amazonBook.isKindleUnlimited &&
+                    !AmazonKindle.isPriceFree(amazonBook.price) &&
+                    System.currentTimeMillis() - amazonBook.lastUpdated > CHECK_AMAZON_PRICE_DELAY_MILLIS;
         }
 
         @Override
-        public void onUpdateBook(String bookId, String id, boolean isKindleUnlimited, String price) {
+        public void onUpdateBook(String bookId, String asin, boolean isKindleUnlimited, String price) {
+            // Update only the `asin` field for the BookCaveBook row.
             try {
-                final int updateResult = databaseHelper.updateBookAmazonFields(bookId, id, isKindleUnlimited, price);
+                final int updateResult = databaseHelper.updateBookAsin(bookId, asin);
                 if (updateResult != 1) {
                     databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + updateResult + "` after updating book `" + bookId + "`.");
                 }
             } catch (SQLException e) {
                 databaseHelper.getLogger().log(Level.SEVERE, "Unable to update book `" + bookId + "` in database.");
+            }
+            // Update all fields for the AmazonBook row.
+            try {
+                final AmazonKindle.Book amazonBook = new AmazonKindle.Book();
+                amazonBook.asin = asin;
+                amazonBook.isKindleUnlimited = isKindleUnlimited;
+                amazonBook.price = price;
+                amazonBook.lastUpdated = System.currentTimeMillis();
+                final int amazonResult = databaseHelper.insertOrReplace(amazonBook);
+                if (amazonResult != 1) {
+                    databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + amazonResult + "` after updating Amazon book `asin=" + asin + "`.");
+                }
+            } catch (SQLException e) {
+                databaseHelper.getLogger().log(Level.SEVERE, "Unable to update Amazon book `asin=" + asin + "` in database.");
             }
         }
 
