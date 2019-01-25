@@ -98,7 +98,7 @@ public abstract class AbstractDatabaseHelper {
         }
     }
 
-    protected static void setStringOrNull(PreparedStatement s, int parameterIndex, String value) throws SQLException {
+    public static void setStringOrNull(PreparedStatement s, int parameterIndex, String value) throws SQLException {
         if (value != null) {
             s.setString(parameterIndex, value);
         } else {

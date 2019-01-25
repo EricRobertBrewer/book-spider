@@ -44,6 +44,157 @@ public class BookCave extends SiteScraper {
         });
     }
 
+    public static class Migrate {
+
+        public static void main(String[] args) {
+            final DatabaseHelper databaseHelper = new DatabaseHelper(null);
+            databaseHelper.connect("..\\content\\bookcave\\contents.db");
+            try {
+                final Statement create = databaseHelper.getConnection().createStatement();
+                create.execute("CREATE TABLE IF NOT EXISTS " + "AmazonBooks" + " (" +
+                        "asin TEXT PRIMARY KEY" +
+                        ", is_kindle_unlimited BOOLEAN DEFAULT 0" +
+                        ", price TEXT DEFAULT NULL" +
+                        ", last_updated INTEGER DEFAULT NULL" +
+                        ");");
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return;
+            }
+            final List<Book> books;
+            try {
+                books = databaseHelper.getBooks();
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return;
+            }
+            for (Book book : books) {
+                if (book.amazonId == null) {
+                    continue;
+                }
+                try {
+                    final PreparedStatement insert = databaseHelper.getConnection().prepareStatement("INSERT INTO " + "AmazonBooks" +
+                            "(asin,is_kindle_unlimited,price,last_updated)" +
+                            " VALUES(?,?,?,?);");
+                    insert.setString(1, book.amazonId);
+                    insert.setBoolean(2, book.amazonIsKindleUnlimited);
+                    DatabaseHelper.setStringOrNull(insert, 3, book.amazonPrice);
+                    insert.setLong(4, book.amazonLastUpdated);
+                    final int result = insert.executeUpdate();
+                    if (result != 1) {
+                        System.out.println("Unexpected result when inserting into `AmazonBooks`: { " +
+                                "asin: `" + book.amazonId + "`" +
+                                ", is_kindle_unlimited: `" + book.amazonIsKindleUnlimited + "`" +
+                                ", price: `" + book.amazonPrice + "`" +
+                                ", last_updated: `" + book.amazonLastUpdated + "`" +
+                                " }: `" + result + "`.");
+                    }
+                    insert.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public static class CheckDuplicates {
+
+        public static void main(String[] args) {
+            final DatabaseHelper databaseHelper = new DatabaseHelper(null);
+            databaseHelper.connect("..\\content\\bookcave\\contents.db");
+            final List<Book> books;
+            try {
+                books = databaseHelper.getBooks();
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return;
+            }
+            final Map<String, List<String>> asinToIds = new HashMap<>();
+            final Set<String> duplicateAsins = new HashSet<>();
+            for (Book book : books) {
+                if (book.amazonId == null) {
+                    continue;
+                }
+                if (asinToIds.containsKey(book.amazonId)) {
+                    duplicateAsins.add(book.amazonId);
+                } else {
+                    asinToIds.put(book.amazonId, new ArrayList<>());
+                }
+                asinToIds.get(book.amazonId).add(book.id);
+            }
+            for (String duplicateAsin : duplicateAsins) {
+                final List<String> ids = asinToIds.get(duplicateAsin);
+                System.out.println("Books matching asin=`" + duplicateAsin + "` (" + ids.size() + "):");
+                for (String id : ids) {
+                    System.out.println("  " + id);
+                }
+            }
+        }
+    }
+
+    public static class RenameFolders {
+
+        public static void main(String[] args) {
+            final DatabaseHelper databaseHelper = new DatabaseHelper(null);
+            databaseHelper.connect("..\\content\\bookcave\\contents.db");
+            final List<Book> books;
+            try {
+                books = databaseHelper.getBooks();
+            } catch (SQLException e) {
+                e.printStackTrace();
+                return;
+            }
+            // Count books which have text, but for which the ASIN is unknown.
+            int unknownAsinCount = 0;
+            for (Book book : books) {
+                final File textFile = new File("..\\content\\bookcave_amazon_kindle\\" + book.id + "\\text.txt");
+                if (textFile.exists() && book.amazonId == null) {
+                    unknownAsinCount++;
+                    System.out.println("(" +
+                            (unknownAsinCount < 100 ? " " : "") +
+                            (unknownAsinCount < 10 ? " " : "") +
+                            unknownAsinCount + ") Unknown ASIN for book with text: `" + book.id + "`.");
+                }
+            }
+            // Map BookCave ID to corresponding ASIN, if any.
+            final Map<String, String> idToAsin = new HashMap<>();
+            for (Book book : books) {
+                idToAsin.put(book.id, book.amazonId);
+            }
+            // Rename book folders from BookCave IDs to ASINs.
+            final File bookcaveAmazonKindleFolder = new File("..\\content\\bookcave_amazon_kindle");
+            if (!bookcaveAmazonKindleFolder.isDirectory()) {
+                return;
+            }
+            final File[] bookIdFolders = bookcaveAmazonKindleFolder.listFiles();
+            if (bookIdFolders == null) {
+                return;
+            }
+            for (File bookIdFolder : bookIdFolders) {
+                if (!bookIdFolder.isDirectory()) {
+                    System.out.println("Not a directory: `" + bookIdFolder.getPath() + "`.");
+                    continue;
+                }
+                final String bookId = bookIdFolder.getName();
+                if (!idToAsin.containsKey(bookId)) {
+                    continue;
+                }
+                final String asin = idToAsin.get(bookId);
+                if (asin == null) {
+                    continue;
+                }
+                final File asinFolder = new File(bookcaveAmazonKindleFolder, asin);
+                if (asinFolder.exists()) {
+                    System.out.println("Folder for book `" + bookId + "` has already been renamed to `" + asin + "`. Skipping.");
+                    continue;
+                }
+                if (!bookIdFolder.renameTo(asinFolder)) {
+                    System.out.println("Problem while renaming book folder `" + bookId + "` to `" + asin + "`.");
+                }
+            }
+        }
+    }
+
     private static final String CONTENTS_DATABASE_FILE_NAME = Folders.getContentFolderName(Folders.ID_BOOKCAVE) + Folders.SLASH + "contents.db";
 
     private final AtomicBoolean isExploringFrontier = new AtomicBoolean(false);
@@ -614,7 +765,7 @@ public class BookCave extends SiteScraper {
         private int insertBookRating(BookRating rating) throws SQLException {
             createTableIfNeeded(TABLE_BOOK_RATINGS);
             final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_RATINGS +
-                    "(book_id,rating,count)\n" +
+                    "(book_id,rating,count)" +
                     " VALUES(?,?,?);");
             insert.setString(1, rating.bookId);
             insert.setString(2, rating.rating);
@@ -627,7 +778,7 @@ public class BookCave extends SiteScraper {
         private int insertBookRatingLevel(BookRatingLevel level) throws SQLException {
             createTableIfNeeded(TABLE_BOOK_RATING_LEVELS);
             final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_RATING_LEVELS +
-                    "(book_id,rating,title,count)\n" +
+                    "(book_id,rating,title,count)" +
                     " VALUES(?,?,?,?);");
             insert.setString(1, level.bookId);
             insert.setString(2, level.rating);
