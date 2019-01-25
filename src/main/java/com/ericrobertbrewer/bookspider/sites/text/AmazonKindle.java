@@ -332,7 +332,8 @@ public class AmazonKindle extends SiteScraper {
         final WebElement navbarDiv = driver.findElement(By.id("navbar"));
         final WebElement signInA = navbarDiv.findElement(By.id("nav-link-accountList"));
         final String aText = signInA.getText().trim();
-        return aText.startsWith("Hello,");
+//        return aText.startsWith("Hello,");
+        return aText.contains("Eric");
     }
 
     /**
