@@ -19,13 +19,15 @@ public class Folders {
      */
     private static final String LOGS_ROOT = ".." + SLASH + "logs" + SLASH;
 
+    public static final String CONTENTS_DATABASE_FILE_NAME = Folders.CONTENT_ROOT + "contents.db";
+
+    public static final String ID_AMAZON_KINDLE = "amazon_kindle";
     public static final String ID_BOOKCAVE = "bookcave";
-    public static final String ID_BOOKCAVE_AMAZON_KINDLE = "bookcave_amazon_kindle";
     public static final String ID_BOOKCAVE_AMAZON_PREVIEW = "bookcave_amazon_preview";
     public static final String ID_COMMONSENSEMEDIA = "commonsensemedia";
     public static final String ID_NYTIMES = "nytimes";
 
-    public static String getContentFolderName(String id) {
+    private static String getContentFolderName(String id) {
         return CONTENT_ROOT + id + SLASH;
     }
 

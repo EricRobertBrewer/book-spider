@@ -32,7 +32,7 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
 
         @Override
         public String getId() {
-            return Folders.ID_BOOKCAVE_AMAZON_KINDLE;
+            return Folders.ID_AMAZON_KINDLE;
         }
 
         @Override

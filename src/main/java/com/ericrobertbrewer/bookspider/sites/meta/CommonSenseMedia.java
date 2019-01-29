@@ -1,6 +1,6 @@
 package com.ericrobertbrewer.bookspider.sites.meta;
 
-import com.ericrobertbrewer.bookspider.AbstractDatabaseHelper;
+import com.ericrobertbrewer.bookspider.sites.db.AbstractDatabaseHelper;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
