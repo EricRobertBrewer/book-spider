@@ -59,10 +59,7 @@ public abstract class AbstractDatabaseHelper {
         }
     }
 
-    public abstract void createTableIfNeeded(String name) throws SQLException;
-
     public boolean recordExists(String table, String key, String value) throws SQLException {
-        createTableIfNeeded(table);
         final PreparedStatement select = getConnection().prepareStatement(
                 "SELECT " + key +
                 " FROM " + table +

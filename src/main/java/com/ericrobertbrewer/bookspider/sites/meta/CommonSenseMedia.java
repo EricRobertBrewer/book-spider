@@ -13,6 +13,7 @@ import org.openqa.selenium.NoSuchElementException;
 import java.io.*;
 import java.nio.file.Files;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.text.DateFormat;
@@ -41,6 +42,58 @@ public class CommonSenseMedia extends SiteScraper {
             public void onComplete(CommonSenseMedia instance) {
             }
         });
+    }
+
+    public static class Migrate {
+
+        public static void main(String[] args) throws SQLException {
+            final CommonSenseMedia.DatabaseHelper databaseHelper = new CommonSenseMedia.DatabaseHelper(null);
+            databaseHelper.connect("../content/commonsensemedia/contents.db");
+            final com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper unifiedDatabaseHelper = new com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper(null);
+            unifiedDatabaseHelper.connectToContentsDatabase();
+            final List<Book> books = databaseHelper.getBooks();
+            for (Book book : books) {
+                unifiedDatabaseHelper.insert(book);
+            }
+            final List<BookCategory> bookCategories = databaseHelper.getBookCategories();
+            for (BookCategory bookCategory : bookCategories) {
+                unifiedDatabaseHelper.insert(bookCategory);
+            }
+            databaseHelper.close();
+            unifiedDatabaseHelper.close();
+        }
+    }
+
+    public static class Book {
+        public String id;
+        public String title;
+        public String authors;
+        public String illustrators = null;
+        public String age;
+        public int stars;
+        public String kicker;
+        public String amazonUrl = null;
+        public String appleBooksUrl = null;
+        public String googlePlayUrl = null;
+        public String genre;
+        public String topics = null;
+        public String type;
+        public String know = null;
+        public String story = null;
+        public String good = null;
+        public String talk = null;
+        public String publishers = null;
+        public String publicationDate = null;
+        public String publishersRecommendedAges = null;
+        public int pages = -1;
+        public long lastUpdated;
+    }
+
+    public static class BookCategory {
+        public String bookId;
+        public String categoryId;
+        public int level;
+        public String explanation = null;
     }
 
     private static final DateFormat PUBLICATION_DATE_FORMAT_WEB = new SimpleDateFormat("MMMM d, yyyy", Locale.US);
@@ -413,35 +466,6 @@ public class CommonSenseMedia extends SiteScraper {
         }
     }
 
-    private static class Book {
-        String id;
-        String title;
-        String authors;
-        String illustrators = null;
-        String age;
-        int stars;
-        String kicker;
-        String genre;
-        String topics = null;
-        String type;
-        String know = null;
-        String story = null;
-        String good = null;
-        String talk = null;
-        String publishers = null;
-        String publicationDate = null;
-        String publishersRecommendedAges = null;
-        int pages = -1;
-        long lastUpdated;
-    }
-
-    private static class BookCategory {
-        String bookId;
-        String categoryId;
-        int level;
-        String explanation = null;
-    }
-
     private static class DatabaseHelper extends AbstractDatabaseHelper {
         private static final String TABLE_BOOKS = "Books";
         private static final String TABLE_BOOK_CATEGORIES = "BookCategories";
@@ -461,10 +485,9 @@ public class CommonSenseMedia extends SiteScraper {
 
         int insertBook(Book book) throws SQLException {
             createTableIfNeeded(TABLE_BOOKS);
-            final PreparedStatement insert = getConnection().prepareStatement(
-                    "INSERT INTO " + TABLE_BOOKS +
-                    "(id,title,authors,illustrators,age,stars,kicker,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)\n" +
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKS +
+                    "(id,title,authors,illustrators,age,stars,kicker,amazon_url,apple_books_url,google_play_url,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)" +
+                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
             insert.setString(1, book.id);
             insert.setString(2, book.title);
             insert.setString(3, book.authors);
@@ -472,18 +495,21 @@ public class CommonSenseMedia extends SiteScraper {
             insert.setString(5, book.age);
             insert.setInt(6, book.stars);
             insert.setString(7, book.kicker);
-            insert.setString(8, book.genre);
-            setStringOrNull(insert, 9, book.topics);
-            insert.setString(10, book.type);
-            setStringOrNull(insert, 11, book.know);
-            setStringOrNull(insert, 12, book.story);
-            setStringOrNull(insert, 13, book.good);
-            setStringOrNull(insert, 14, book.talk);
-            setStringOrNull(insert, 15, book.publishers);
-            setStringOrNull(insert, 16, book.publicationDate);
-            setStringOrNull(insert, 17, book.publishersRecommendedAges);
-            setIntOrNull(insert, 18, book.pages, -1);
-            insert.setLong(19, book.lastUpdated);
+            setStringOrNull(insert, 8, book.amazonUrl);
+            setStringOrNull(insert, 9, book.appleBooksUrl);
+            setStringOrNull(insert, 10, book.googlePlayUrl);
+            insert.setString(11, book.genre);
+            setStringOrNull(insert, 12, book.topics);
+            insert.setString(13, book.type);
+            setStringOrNull(insert, 14, book.know);
+            setStringOrNull(insert, 15, book.story);
+            setStringOrNull(insert, 16, book.good);
+            setStringOrNull(insert, 17, book.talk);
+            setStringOrNull(insert, 18, book.publishers);
+            setStringOrNull(insert, 19, book.publicationDate);
+            setStringOrNull(insert, 20, book.publishersRecommendedAges);
+            setIntOrNull(insert, 21, book.pages, -1);
+            insert.setLong(22, book.lastUpdated);
             final int result = insert.executeUpdate();
             insert.close();
             return result;
@@ -491,9 +517,8 @@ public class CommonSenseMedia extends SiteScraper {
 
         int insertBookCategory(BookCategory bookCategory) throws SQLException {
             createTableIfNeeded(TABLE_BOOK_CATEGORIES);
-            final PreparedStatement insert = getConnection().prepareStatement(
-                    "INSERT INTO " + TABLE_BOOK_CATEGORIES +
-                    "(book_id,category_id,level,explanation)\n" +
+            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_CATEGORIES +
+                    "(book_id,category_id,level,explanation)" +
                     " VALUES(?,?,?,?);");
             insert.setString(1, bookCategory.bookId);
             insert.setString(2, bookCategory.categoryId);
@@ -504,38 +529,101 @@ public class CommonSenseMedia extends SiteScraper {
             return result;
         }
 
+        public List<Book> getBooks() throws SQLException {
+            final List<Book> books = new ArrayList<>();
+            final Statement select = getConnection().createStatement();
+            final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_BOOKS + ";");
+            while (result.next()) {
+                final Book book = makeBookFromResult(result);
+                books.add(book);
+            }
+            select.close();
+            return Collections.unmodifiableList(books);
+        }
+
+        public List<BookCategory> getBookCategories() throws SQLException {
+            final List<BookCategory> bookCategories = new ArrayList<>();
+            final Statement select = getConnection().createStatement();
+            final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_BOOK_CATEGORIES + ";");
+            while (result.next()) {
+                final BookCategory bookCategory = makeBookCategoryFromResult(result);
+                bookCategories.add(bookCategory);
+            }
+            select.close();
+            return Collections.unmodifiableList(bookCategories);
+        }
+
+        private Book makeBookFromResult(ResultSet result) throws SQLException {
+            final Book book = new Book();
+            book.id = result.getString("id");
+            book.title = result.getString("title");
+            book.authors = result.getString("authors");
+            book.illustrators = result.getString("illustrators");
+            book.age = result.getString("age");
+            book.stars = result.getInt("stars");
+            book.kicker = result.getString("kicker");
+            book.amazonUrl = result.getString("amazon_url");
+            book.appleBooksUrl = result.getString("apple_books_url");
+            book.googlePlayUrl = result.getString("google_play_url");
+            book.genre = result.getString("genre");
+            book.topics = result.getString("topics");
+            book.type = result.getString("type");
+            book.know = result.getString("know");
+            book.story = result.getString("story");
+            book.good = result.getString("good");
+            book.talk = result.getString("talk");
+            book.publishers = result.getString("publishers");
+            book.publicationDate = result.getString("publication_date");
+            book.publishersRecommendedAges = result.getString("publishers_recommended_ages");
+            book.pages = getIntOrNull(result, "pages", -1);
+            book.lastUpdated = result.getLong("last_updated");
+            return book;
+        }
+
+        private BookCategory makeBookCategoryFromResult(ResultSet result) throws SQLException {
+            final BookCategory bookCategory = new BookCategory();
+            bookCategory.bookId = result.getString("book_id");
+            bookCategory.categoryId = result.getString("category_id");
+            bookCategory.level = result.getInt("level");
+            bookCategory.explanation = result.getString("explanation");
+            return bookCategory;
+        }
+
         @Override
         public void createTableIfNeeded(String name) throws SQLException {
             if (TABLE_BOOKS.equalsIgnoreCase(name)) {
                 final Statement statement = getConnection().createStatement();
-                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (\n" +
-                        " id TEXT PRIMARY KEY,\n" + // the-unwanted-stories-of-the-syrian-refugees
-                        " title TEXT NOT NULL,\n" + // The Unwanted: Stories of the Syrian Refugees
-                        " authors TEXT NOT NULL,\n" + // Don Brown
-                        " illustrators TEXT DEFAULT NULL,\n" + // Don Brown
-                        " age TEXT NOT NULL,\n" + // 13+
-                        " stars INTEGER NOT NULL,\n" + // 5
-                        " kicker TEXT NOT NULL,\n" + // Compassionate graphic novel account of refugees' struggle.
-                        " genre TEXT NOT NULL,\n" + // graphic novel
-                        " topics TEXT DEFAULT NULL,\n" + // history,misfits and underdogs,pirates
-                        " type TEXT NOT NULL,\n" + // non-fiction
-                        " know TEXT DEFAULT NULL,\n" + // Parents need to know that The Unwanted is a nonfiction graphic novel written and illustrated by...
-                        " story TEXT DEFAULT NULL,\n" + // Beginning in 2011, THE UNWANTED shows how the simple act of spray-painting...
-                        " good TEXT DEFAULT NULL,\n" + // The issues surrounding the ongoing Syrian refugee crisis are numerous and complex,...
-                        " talk TEXT DEFAULT NULL,\n" + // Families can talk about the conditions that force people to leave their homes...
-                        " publishers TEXT DEFAULT NULL,\n" + // HMH Books for Young Readers
-                        " publication_date TEXT DEFAULT NULL,\n" + // September 18, 2018 -> 2018-09-18
-                        " publishers_recommended_ages TEXT DEFAULT NULL,\n" + // NULL or '13 - 18'
-                        " pages INTEGER DEFAULT NULL,\n" + // 112
-                        " last_updated INTEGER NOT NULL\n" + // System.currentTimeMillis() -> long
+                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (" +
+                        " id TEXT PRIMARY KEY" + // the-unwanted-stories-of-the-syrian-refugees
+                        ", title TEXT NOT NULL" + // The Unwanted: Stories of the Syrian Refugees
+                        ", authors TEXT NOT NULL" + // Don Brown
+                        ", illustrators TEXT DEFAULT NULL" + // Don Brown
+                        ", age TEXT NOT NULL" + // 13+
+                        ", stars INTEGER NOT NULL" + // 5
+                        ", kicker TEXT NOT NULL" + // Compassionate graphic novel account of refugees' struggle.
+                        ", amazon_url TEXT DEFAULT NULL" +
+                        ", apple_books_url TEXT DEFAULT NULL" +
+                        ", google_play_url TEXT DEFAULT NULL" +
+                        ", genre TEXT NOT NULL" + // graphic novel
+                        ", topics TEXT DEFAULT NULL" + // history,misfits and underdogs,pirates
+                        ", type TEXT NOT NULL" + // non-fiction
+                        ", know TEXT DEFAULT NULL" + // Parents need to know that The Unwanted is a nonfiction graphic novel written and illustrated by...
+                        ", story TEXT DEFAULT NULL" + // Beginning in 2011, THE UNWANTED shows how the simple act of spray-painting...
+                        ", good TEXT DEFAULT NULL" + // The issues surrounding the ongoing Syrian refugee crisis are numerous and complex,...
+                        ", talk TEXT DEFAULT NULL" + // Families can talk about the conditions that force people to leave their homes...
+                        ", publishers TEXT DEFAULT NULL" + // HMH Books for Young Readers
+                        ", publication_date TEXT DEFAULT NULL" + // September 18, 2018 -> 2018-09-18
+                        ", publishers_recommended_ages TEXT DEFAULT NULL" + // NULL or '13 - 18'
+                        ", pages INTEGER DEFAULT NULL" + // 112
+                        ", last_updated INTEGER NOT NULL" + // System.currentTimeMillis() -> long
                         ");");
             } else if (TABLE_BOOK_CATEGORIES.equalsIgnoreCase(name)) {
                 final Statement statement = getConnection().createStatement();
-                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_CATEGORIES + " (\n" +
-                        " book_id TEXT NOT NULL,\n" + // the-unwanted-stories-of-the-syrian-refugees
-                        " category_id TEXT NOT NULL,\n" +
-                        " level INTEGER NOT NULL,\n" +
-                        " explanation TEXT DEFAULT NULL\n" +
+                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_CATEGORIES + " (" +
+                        " book_id TEXT NOT NULL" + // the-unwanted-stories-of-the-syrian-refugees
+                        ", category_id TEXT NOT NULL" +
+                        ", level INTEGER NOT NULL" +
+                        ", explanation TEXT DEFAULT NULL" +
                         ");");
             } else {
                 throw new IllegalArgumentException("Unknown table name: `" + name + "`.");
