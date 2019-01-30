@@ -40,8 +40,9 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
         }
     };
 
-    private static final String EMAIL = "EMAIL"; //"eric.r.brewer@gmail.com";
+    private static final String EMAIL = "EMAIL";
     private static final String PASSWORD = "PASSWORD";
+    private static final String FIRST_NAME = "FIRST_NAME";
 
     private WebDriver driver;
 
@@ -60,7 +61,7 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
 
     @Test
     void scrapeTest() {
-        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, getContentFolder(), EMAIL, PASSWORD, 4, false);
+        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, getContentFolder(), EMAIL, PASSWORD, FIRST_NAME, 4, false);
     }
 
     @Test

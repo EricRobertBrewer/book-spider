@@ -2,8 +2,10 @@ package com.ericrobertbrewer.bookspider.sites.meta;
 
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
+import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper;
+import com.ericrobertbrewer.bookspider.sites.text.AmazonKindle;
 import com.ericrobertbrewer.web.WebUtils;
 import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
@@ -521,6 +523,67 @@ public class CommonSenseMedia extends SiteScraper {
                 getLogger().log(Level.INFO, "Successfully scraped book category `" + bookCategory.categoryId + "` for book `" + bookCategory.bookId + "`.");
             } else {
                 getLogger().log(Level.WARNING, "Unusual database response `" + categoryResult + "` when inserting book category `" + bookId + ":" + bookCategory.categoryId + "`.");
+            }
+        }
+    }
+
+    private static List<BookScrapeInfo> getBookScrapeInfos(List<Book> books) {
+        final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();
+        for (Book book : books) {
+            // Skip unattainable books.
+            if (book.amazonUrl == null) {
+                continue;
+            }
+            final String[] urls = {book.amazonUrl};
+            bookScrapeInfos.add(new BookScrapeInfo(book.id, urls, book.asin));
+        }
+        return bookScrapeInfos;
+    }
+
+    public static class AmazonKindleProvider implements Provider<AmazonKindle>, AmazonKindle.Listener {
+
+        public static void main(String[] args) throws IOException {
+            Launcher.launch(args, new AmazonKindleProvider());
+        }
+
+        private DatabaseHelper databaseHelper;
+
+        @Override
+        public AmazonKindle newInstance(Logger logger) {
+            databaseHelper = new DatabaseHelper(logger);
+            databaseHelper.connectToContentsDatabase();
+            final List<Book> allBooks;
+            try {
+                allBooks = databaseHelper.getCommonSenseMediaBooks();
+            } catch (SQLException e) {
+                throw new RuntimeException("Unable to retrieve books.", e);
+            }
+            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
+            final AmazonKindle amazonKindle = new AmazonKindle(logger, bookScrapeInfos);
+            amazonKindle.setListener(this);
+            return amazonKindle;
+        }
+
+        @Override
+        public String getId() {
+            return Folders.ID_AMAZON_KINDLE;
+        }
+
+        @Override
+        public void onComplete(AmazonKindle instance) {
+            instance.setListener(null);
+            databaseHelper.close();
+        }
+
+        @Override
+        public void onUpdateBook(String bookId, String asin) {
+            try {
+                final int result = databaseHelper.updateCommonSenseMediaBookAsin(bookId, asin);
+                if (result != 1) {
+                    databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + result + "` after updating book `" + bookId + "`.");
+                }
+            } catch (SQLException e) {
+                databaseHelper.getLogger().log(Level.SEVERE, "Unable to update book `" + bookId + "` in database.");
             }
         }
     }

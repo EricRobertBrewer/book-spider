@@ -260,6 +260,18 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         return result;
     }
 
+    public int updateCommonSenseMediaBookAsin(String bookId, String asin) throws SQLException {
+        final PreparedStatement update = getConnection().prepareStatement("UPDATE " + TABLE_COMMONSENSEMEDIA_BOOKS +
+                " SET" +
+                " asin=?" +
+                " WHERE id=?;");
+        update.setString(1, asin);
+        update.setString(2, bookId);
+        final int result = update.executeUpdate();
+        update.close();
+        return result;
+    }
+
     public List<CommonSenseMedia.Book> getCommonSenseMediaBooks() throws SQLException {
         final List<CommonSenseMedia.Book> books = new ArrayList<>();
         final Statement select = getConnection().createStatement();

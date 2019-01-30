@@ -53,27 +53,28 @@ public class AmazonKindle extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
-        if (args.length < 2 || args.length > 5) {
-            throw new IllegalArgumentException("Usage: <email> <password> [threads=1] [max-retries=1] [force=false]");
+        if (args.length < 3 || args.length > 6) {
+            throw new IllegalArgumentException("Usage: <email> <password> <first-name> [threads=1] [max-retries=1] [force=false]");
         }
         // Collect arguments.
         final String email = args[0];
         final String password = args[1];
+        final String firstName = args[2];
         final int threads;
-        if (args.length > 2) {
-            threads = Integer.parseInt(args[2]);
+        if (args.length > 3) {
+            threads = Integer.parseInt(args[3]);
         } else {
             threads = 1;
         }
         final int maxRetries;
-        if (args.length > 3) {
-            maxRetries = Integer.parseInt(args[3]);
+        if (args.length > 4) {
+            maxRetries = Integer.parseInt(args[4]);
         } else {
             maxRetries = 1;
         }
         final boolean force;
-        if (args.length > 4) {
-            force = Boolean.parseBoolean(args[4]);
+        if (args.length > 5) {
+            force = Boolean.parseBoolean(args[5]);
         } else {
             force = false;
         }
@@ -85,17 +86,17 @@ public class AmazonKindle extends SiteScraper {
         final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
 
         // Start scraping.
-        scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, maxRetries, force, callback);
+        scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, firstName, maxRetries, force, callback);
     }
 
-    private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue, int threads, WebDriverFactory factory, File contentFolder, String email, String password, int maxRetries, boolean force, Launcher.Callback callback) {
+    private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue, int threads, WebDriverFactory factory, File contentFolder, String email, String password, String firstName, int maxRetries, boolean force, Launcher.Callback callback) {
         for (int i = 0; i < threads; i++) {
             final Thread scrapeThread = new Thread(() -> {
                 final WebDriver driver = factory.newInstance();
                 scrapeThreadsRunning.incrementAndGet();
                 setIsWindowSingleColumn(driver);
                 // Start scraping.
-                scrapeBooks(queue, driver, contentFolder, email, password, maxRetries, force);
+                scrapeBooks(queue, driver, contentFolder, email, password, firstName, maxRetries, force);
                 driver.quit();
                 // Finish.
                 if (scrapeThreadsRunning.decrementAndGet() == 0) {
@@ -115,7 +116,7 @@ public class AmazonKindle extends SiteScraper {
         driver.manage().window().setSize(new Dimension(719, 978));
     }
 
-    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, int maxRetries, boolean force) {
+    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, String firstName, int maxRetries, boolean force) {
         while (!queue.isEmpty()) {
             // Pull the next book off of the queue.
             final BookScrapeInfo bookScrapeInfo = queue.poll();
@@ -127,7 +128,7 @@ public class AmazonKindle extends SiteScraper {
                 try {
                     book = databaseHelper.getAmazonBook(bookScrapeInfo.asin);
                 } catch (SQLException e) {
-                    getLogger().log(Level.SEVERE, "Encountered error while retrieving Amazon book `" + bookScrapeInfo.id + "`, `asin=" + bookScrapeInfo.asin + "` from database.", e);
+                    getLogger().log(Level.SEVERE, "Encountered error while retrieving Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database.", e);
                     continue;
                 }
                 if (book == null) {
@@ -163,7 +164,7 @@ public class AmazonKindle extends SiteScraper {
             for (String url : bookScrapeInfo.urls) {
                 try {
                     getLogger().log(Level.INFO, "Processing book `" + bookScrapeInfo.id + "` using URL `" + url + "`.");
-                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, contentFolder, email, password, maxRetries, force);
+                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, contentFolder, email, password, firstName, maxRetries, force);
                     break;
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
@@ -191,7 +192,7 @@ public class AmazonKindle extends SiteScraper {
         return price.startsWith(PRICE_FREE);
     }
 
-    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, File contentFolder, String email, String password, int maxRetries, boolean force) throws IOException {
+    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, File contentFolder, String email, String password, String firstName, int maxRetries, boolean force) throws IOException {
         // Navigate to the Amazon store page.
         driver.navigate().to(url);
         DriverUtils.sleep(1500L);
@@ -206,10 +207,10 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Sign in, if needed.
-        if (!isSignedIn(driver)) {
+        if (!isSignedIn(driver, firstName)) {
             navigateToSignInPage(driver);
             signIn(driver, email, password);
-            scrapeBook(driver, url, bookId, oldAsin, contentFolder, email, password, maxRetries, force);
+            scrapeBook(driver, url, bookId, oldAsin, contentFolder, email, password, firstName, maxRetries, force);
             return;
         }
 
@@ -258,19 +259,19 @@ public class AmazonKindle extends SiteScraper {
         switch (purchaseType) {
             case PURCHASE_OWNED:
                 price = getBookPrice(dpContainerDiv, layoutType);
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` already purchased.");
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` already purchased.");
                 break;
             case KINDLE_UNLIMITED_BORROWED:
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` already borrowed through Kindle Unlimited.");
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` already borrowed through Kindle Unlimited.");
                 isKindleUnlimited = true;
                 break;
             case KINDLE_UNLIMITED_AVAILABLE:
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` is available through Kindle Unlimited.");
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is available through Kindle Unlimited.");
                 isKindleUnlimited = true;
                 break;
             case PURCHASE_AVAILABLE:
                 price = getBookPrice(dpContainerDiv, layoutType);
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` is available to purchase.");
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is available to purchase.");
                 break;
             case UNAVAILABLE:
             default:
@@ -296,7 +297,7 @@ public class AmazonKindle extends SiteScraper {
                 databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + result + "` after updating Amazon book asin=`" + asin + "`.");
             }
         } catch (SQLException e) {
-            databaseHelper.getLogger().log(Level.SEVERE, "Unable to update Amazon book `asin=" + asin + "` in database.");
+            databaseHelper.getLogger().log(Level.SEVERE, "Unable to update Amazon book asin=`" + asin + "` in database.");
         }
 
         // Access this book's folder, which will contain its text and images.
@@ -343,7 +344,7 @@ public class AmazonKindle extends SiteScraper {
                 }
                 getLogger().log(Level.INFO, "Deleted text file for book `" + bookId + "`, asin=`" + asin + "`. Continuing.");
             } else {
-                getLogger().log(Level.INFO, "Text for book `" + bookId + "`, `asin=" + asin + "` has already been extracted. Skipping.");
+                getLogger().log(Level.INFO, "Text for book `" + bookId + "`, asin=`" + asin + "` has already been extracted. Skipping.");
                 return;
             }
         }
@@ -356,24 +357,24 @@ public class AmazonKindle extends SiteScraper {
                 borrowBookThroughKindleUnlimited(driver, dpContainerDiv, layoutType);
             } catch (NoSuchElementException e) {
                 // We were unable to borrow the book. Probably the 10-book limit is met.
-                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`, `asin=" + asin + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
+                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`, asin=`" + asin + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
                 return;
             }
-            getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` has been successfully borrowed.");
+            getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` has been successfully borrowed.");
         } else if (purchaseType == PurchaseType.PURCHASE_AVAILABLE) {
             if (price == null) {
-                getLogger().log(Level.SEVERE, "Unable to find price for book `" + bookId + "`, `asin=" + asin + "`. Skipping.");
+                getLogger().log(Level.SEVERE, "Unable to find price for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
                 return;
             } else if (isPriceFree(price)) {
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` is free on Kindle. Purchasing...");
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is free on Kindle. Purchasing...");
                 // "Purchase" the book.
                 purchaseBook(driver, dpContainerDiv, layoutType);
             } else {
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` is neither free nor available through Kindle Unlimited. Skipping.");
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is neither free nor available through Kindle Unlimited. Skipping.");
                 return;
             }
         } else if (purchaseType == PurchaseType.UNAVAILABLE) {
-            getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` is unavailable to purchase. Skipping.");
+            getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is unavailable to purchase. Skipping.");
             return;
         }
 
@@ -385,22 +386,22 @@ public class AmazonKindle extends SiteScraper {
             // Check whether any content has been extracted.
             if (!content.isEmpty()) {
                 // Persist content once it has been totally collected.
-                getLogger().log(Level.INFO, "Writing text for book `" + bookId + "`, `asin=" + asin + "`.");
+                getLogger().log(Level.INFO, "Writing text for book `" + bookId + "`, asin=`" + asin + "`.");
                 content.writeBook(textFile);
-                getLogger().log(Level.INFO, "Saving images for book `" + bookId + "`, `asin=" + asin + "`.");
+                getLogger().log(Level.INFO, "Saving images for book `" + bookId + "`, asin=`" + asin + "`.");
                 content.saveImages(bookFolder);
-                getLogger().log(Level.INFO, "Successfully collected and saved content for book `" + bookId + "`, `asin=" + asin + "`.");
+                getLogger().log(Level.INFO, "Successfully collected and saved content for book `" + bookId + "`, asin=`" + asin + "`.");
             } else {
-                getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "`, `asin=" + asin + "` after " + maxRetries + " retries. Quitting.");
+                getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "`, asin=`" + asin + "` after " + maxRetries + " retries. Quitting.");
             }
         } finally {
             // Return this book to avoid reaching the 10-book limit for Kindle Unlimited.
             // Hitting the limit prevents any other books from being borrowed through KU.
             if (isKindleUnlimited) {
                 if (returnKindleUnlimitedBook(driver, title, email, password)) {
-                    getLogger().log(Level.INFO, "Book `" + bookId + "`, `asin=" + asin + "` has been successfully returned through Kindle Unlimited.");
+                    getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` has been successfully returned through Kindle Unlimited.");
                 } else {
-                    getLogger().log(Level.WARNING, "Unable to return book `" + bookId + "`, `asin=" + asin + "` with title `" + title + "` through Kindle Unlimited.");
+                    getLogger().log(Level.WARNING, "Unable to return book `" + bookId + "`, asin=`" + asin + "` with title `" + title + "` through Kindle Unlimited.");
                 }
             }
         }
@@ -408,12 +409,19 @@ public class AmazonKindle extends SiteScraper {
 
     private static final String SIGN_IN_URL_START = "https://www.amazon.com/ap/signin";
 
-    private boolean isSignedIn(WebDriver driver) {
+    /**
+     * Check whether we have signed in to Amazon.
+     * @param driver        The web driver.
+     * @param firstName     The first name of the Amazon account holder.
+     *                      This is used to see if the sign-in element contains the text, "Hello, [first-name]".
+     * @return              `true` if the user is signed in. Otherwise, `false`.
+     */
+    private boolean isSignedIn(WebDriver driver, String firstName) {
         final WebElement navbarDiv = driver.findElement(By.id("navbar"));
         final WebElement signInA = navbarDiv.findElement(By.id("nav-link-accountList"));
         final String aText = signInA.getText().trim();
 //        return aText.startsWith("Hello,");
-        return aText.contains("Eric");
+        return aText.contains(firstName);
     }
 
     /**
@@ -763,11 +771,11 @@ public class AmazonKindle extends SiteScraper {
                 }
                 // Occasionally, the text content hasn't been loaded into the page and this method will
                 // suppose that it is finished. In this case, pause, then try again.
-                getLogger().log(Level.WARNING, "`collectContent` for book `" + bookId + "`, `asin=" + asin + "` completed without failing or extracting any text. " + retries + " retries left. Pausing, then retrying...");
+                getLogger().log(Level.WARNING, "`collectContent` for book `" + bookId + "`, asin=`" + asin + "` completed without failing or extracting any text. " + retries + " retries left. Pausing, then retrying...");
             } catch (NoSuchElementException e) {
-                getLogger().log(Level.WARNING, "Unable to find unknown element for book `" + bookId + "`, `asin=" + asin + "`.");
+                getLogger().log(Level.WARNING, "Unable to find unknown element for book `" + bookId + "`, asin=`" + asin + "`.");
             } catch (Throwable t) {
-                getLogger().log(Level.WARNING, "Encountered error while collecting content for book `" + bookId + "`, `asin=" + asin + "`. Retrying.", t);
+                getLogger().log(Level.WARNING, "Encountered error while collecting content for book `" + bookId + "`, asin=`" + asin + "`. Retrying.", t);
             }
             retries--;
         }
@@ -839,7 +847,7 @@ public class AmazonKindle extends SiteScraper {
             try {
                 kindleReaderContainerDiv = DriverUtils.findElementWithRetries(driver, By.id("KindleReaderContainer"), 7, 2500L);
             } catch (NoSuchElementException e) {
-                getLogger().log(Level.WARNING, "Unable to find `KindleReaderContainer` for book `" + bookId + "`, `asin=" + asin + "`.");
+                getLogger().log(Level.WARNING, "Unable to find `KindleReaderContainer` for book `" + bookId + "`, asin=`" + asin + "`.");
                 return;
             }
 
@@ -848,7 +856,7 @@ public class AmazonKindle extends SiteScraper {
             try {
                 kindleReaderFrame = DriverUtils.findElementWithRetries(kindleReaderContainerDiv, By.id("KindleReaderIFrame"), 9, 2500L);
             } catch (NoSuchElementException e) {
-                getLogger().log(Level.WARNING, "Unable to find `KindleReaderIFrame` for book `" + bookId + "`, `asin=" + asin + "`.");
+                getLogger().log(Level.WARNING, "Unable to find `KindleReaderIFrame` for book `" + bookId + "`, asin=`" + asin + "`.");
                 return;
             }
             final WebDriver readerDriver = driver.switchTo().frame(kindleReaderFrame);
@@ -877,7 +885,7 @@ public class AmazonKindle extends SiteScraper {
             try {
                 touchLayerDiv = DriverUtils.findElementWithRetries(bookContainerDiv, By.id("kindleReader_touchLayer"), 3, 2500L);
             } catch (NoSuchElementException e) {
-                getLogger().log(Level.WARNING, "Unable to find `kindleReader_touchLayer` for book `" + bookId + "`, `asin=" + asin + "`.");
+                getLogger().log(Level.WARNING, "Unable to find `kindleReader_touchLayer` for book `" + bookId + "`, asin=`" + asin + "`.");
                 return;
             }
             final WebElement sideMarginDiv = touchLayerDiv.findElement(By.id("kindleReader_sideMargin"));
@@ -908,7 +916,7 @@ public class AmazonKindle extends SiteScraper {
                     final String className = pageTurnAreaRightDiv.getAttribute("class");
                     if (!className.contains("pageArrow")) {
                         final long totalTime = System.currentTimeMillis() - startTime;
-                        getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`, `asin=" + asin + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
+                        getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`, asin=`" + asin + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
                         break;
                     }
                     pageTurnAreaRightDiv.click();
