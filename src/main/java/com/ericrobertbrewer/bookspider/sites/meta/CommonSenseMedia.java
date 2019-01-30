@@ -1,26 +1,25 @@
 package com.ericrobertbrewer.bookspider.sites.meta;
 
-import com.ericrobertbrewer.bookspider.sites.db.AbstractDatabaseHelper;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
+import com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper;
+import com.ericrobertbrewer.web.WebUtils;
 import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
-import com.ericrobertbrewer.web.WebUtils;
-import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
+import org.openqa.selenium.*;
 
 import java.io.*;
 import java.nio.file.Files;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -42,26 +41,6 @@ public class CommonSenseMedia extends SiteScraper {
             public void onComplete(CommonSenseMedia instance) {
             }
         });
-    }
-
-    public static class Migrate {
-
-        public static void main(String[] args) throws SQLException {
-            final CommonSenseMedia.DatabaseHelper databaseHelper = new CommonSenseMedia.DatabaseHelper(null);
-            databaseHelper.connect("../content/commonsensemedia/contents.db");
-            final com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper unifiedDatabaseHelper = new com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper(null);
-            unifiedDatabaseHelper.connectToContentsDatabase();
-            final List<Book> books = databaseHelper.getBooks();
-            for (Book book : books) {
-                unifiedDatabaseHelper.insert(book);
-            }
-            final List<BookCategory> bookCategories = databaseHelper.getBookCategories();
-            for (BookCategory bookCategory : bookCategories) {
-                unifiedDatabaseHelper.insert(bookCategory);
-            }
-            databaseHelper.close();
-            unifiedDatabaseHelper.close();
-        }
     }
 
     public static class Book {
@@ -87,6 +66,7 @@ public class CommonSenseMedia extends SiteScraper {
         public String publishersRecommendedAges = null;
         public int pages = -1;
         public long lastUpdated;
+        public String asin = null;
     }
 
     public static class BookCategory {
@@ -100,7 +80,7 @@ public class CommonSenseMedia extends SiteScraper {
     private static final DateFormat PUBLICATION_DATE_FORMAT_DATABASE = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
 
     private final AtomicBoolean isExploringFrontier = new AtomicBoolean(false);
-    private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
+    private final AtomicInteger scrapeThreadsRunning = new AtomicInteger(0);
 
     private CommonSenseMedia(Logger logger) {
         super(logger);
@@ -108,9 +88,31 @@ public class CommonSenseMedia extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, String[] args, final Launcher.Callback callback) {
-        getLogger().log(Level.INFO, "Scraping Common Sense Media.");
-        // Create frontier.
-        final Queue<String> frontier = new LinkedList<>();
+        // Collect arguments.
+        if (args.length > 3) {
+            throw new IllegalArgumentException("Usage: [threads=1] [max-retries=1] [force=false]");
+        }
+        final int threads;
+        if (args.length > 0) {
+            threads = Integer.parseInt(args[0]);
+        } else {
+            threads = 1;
+        }
+        final int maxRetries;
+        if (args.length > 1) {
+            maxRetries = Integer.parseInt(args[1]);
+        } else {
+            maxRetries = 1;
+        }
+        final boolean force;
+        if (args.length > 2) {
+            force = Boolean.parseBoolean(args[2]);
+        } else {
+            force = false;
+        }
+
+        // Create thread-safe frontier data structure.
+        final Queue<String> frontier = new ConcurrentLinkedQueue<>();
         final File frontierFile = new File(contentFolder, "frontier.txt");
         final boolean exists = frontierFile.exists();
         if (exists) {
@@ -121,9 +123,10 @@ public class CommonSenseMedia extends SiteScraper {
                 }
             } catch (IOException e) {
                 getLogger().log(Level.WARNING, "Unable to read existing frontier file.", e);
+                return;
             }
         }
-        // Create PrintWriter.
+        // Create PrintWriter to write the frontier.
         final PrintStream frontierOut;
         try {
             frontierOut = new PrintStream(new FileOutputStream(frontierFile, exists));
@@ -131,6 +134,11 @@ public class CommonSenseMedia extends SiteScraper {
             getLogger().log(Level.SEVERE, "Unable to write to frontier file.", e);
             return;
         }
+
+        // Create DatabaseHelper.
+        final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
+        databaseHelper.connectToContentsDatabase();
+
         // Populate the frontier.
         final Thread frontierThread = new Thread(() -> {
             isExploringFrontier.set(true);
@@ -138,27 +146,15 @@ public class CommonSenseMedia extends SiteScraper {
             exploreFrontier(frontierDriver, frontier, frontierOut);
             frontierDriver.quit();
             isExploringFrontier.set(false);
-            if (!isScrapingBooks.get()) {
+            if (scrapeThreadsRunning.get() == 0) {
+                databaseHelper.close();
                 callback.onComplete();
             }
         }, "frontier");
         frontierThread.start();
-        // Create DatabaseHelper.
-        final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
-        // Create a separate thread to scrape books.
-        final Thread scrapeThread = new Thread(() -> {
-            isScrapingBooks.set(true);
-            final WebDriver scrapeDriver = factory.newInstance();
-            databaseHelper.connect(contentFolder.getPath() + Folders.SLASH + "contents.db");
-            scrapeBooks(scrapeDriver, frontier, databaseHelper);
-            databaseHelper.close();
-            scrapeDriver.quit();
-            isScrapingBooks.set(false);
-            if (!isExploringFrontier.get()) {
-                callback.onComplete();
-            }
-        }, "scrape");
-        scrapeThread.start();
+
+        // Create separate threads to scrape books.
+        scrapeBooksThreaded(frontier, threads, factory, databaseHelper, maxRetries, force, callback);
     }
 
     /**
@@ -184,12 +180,8 @@ public class CommonSenseMedia extends SiteScraper {
                     getLogger().log(Level.WARNING, "Unable to find web element while exploring frontier at page " + page + ".", e);
                 } catch (TimeoutException e) {
                     getLogger().log(Level.WARNING, "Received timeout while exploring frontier at page " + page + ".", e);
-                    try {
-                        // Give the site 10 seconds to recover.
-                        Thread.sleep(10000L);
-                    } catch (InterruptedException ie) {
-                        ie.printStackTrace();
-                    }
+                    // Give the site 10 seconds to recover.
+                    DriverUtils.sleep(10000L);
                 }
                 retries--;
             }
@@ -200,12 +192,7 @@ public class CommonSenseMedia extends SiteScraper {
 
     private boolean exploreFrontierPage(WebDriver driver, Queue<String> frontier, Set<String> frontierSet, PrintStream frontierOut, int page) {
         driver.navigate().to("https://www.commonsensemedia.org/book-reviews?page=" + page);
-        // Allow page elements to load.
-        try {
-            Thread.sleep(1000L);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        DriverUtils.sleep(1000L);
         DriverUtils.scrollDown(driver, 40, 50L);
         // Scrape each item's book ID.
         final WebElement reviewsBrowseDiv = driver.findElement(By.className("view-display-id-ctools_context_reviews_browse"));
@@ -235,32 +222,54 @@ public class CommonSenseMedia extends SiteScraper {
         return false;
     }
 
+    private void scrapeBooksThreaded(Queue<String> frontier, int threads, WebDriverFactory factory, DatabaseHelper databaseHelper, int maxRetries, boolean force, Launcher.Callback callback) {
+        for (int i = 0; i < threads; i++) {
+            final Thread scrapeThread = new Thread(() -> {
+                scrapeThreadsRunning.incrementAndGet();
+                final WebDriver driver = factory.newInstance();
+                // Widen the browser window.
+                driver.manage().window().setSize(new Dimension(1280, 978));
+                // Start scraping.
+                scrapeBooks(frontier, driver, databaseHelper, maxRetries, force);
+                // Finish.
+                driver.quit();
+                scrapeThreadsRunning.decrementAndGet();
+                if (!isExploringFrontier.get() && scrapeThreadsRunning.get() == 0) {
+                    databaseHelper.close();
+                    callback.onComplete();
+                }
+            }, "scrape-" + i);
+            scrapeThread.start();
+        }
+    }
+
     /**
      * Performed by the scrape thread.
      *
-     * @param driver         Driver.
      * @param frontier       Queue of book IDs to scrape.
+     * @param driver         Driver.
      * @param databaseHelper To contents database. Should have already been connected.
      *                       This method does not close the connection to the database.
      */
-    private void scrapeBooks(WebDriver driver, Queue<String> frontier, DatabaseHelper databaseHelper) {
+    private void scrapeBooks(Queue<String> frontier, WebDriver driver, DatabaseHelper databaseHelper, int maxRetries, boolean force) {
         // Start scraping.
         getLogger().log(Level.INFO, "Scraping details...");
         while (isExploringFrontier.get() || !frontier.isEmpty()) {
             // Wait for frontier to populate before polling.
             if (frontier.isEmpty()) {
-                try {
-                    Thread.sleep(5000L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+                DriverUtils.sleep(5000L);
                 continue;
             }
             final String bookId = frontier.poll();
-            int retries = 3;
+            // Ignore books which are fresh enough.
+            if (!force && !shouldUpdateBook(databaseHelper, bookId)) {
+                continue;
+            }
+            getLogger().log(Level.INFO, "Started scraping book `" + bookId + "`.");
+            int retries = maxRetries;
             while (retries > 0) {
                 try {
-                    scrapeBook(driver, bookId, databaseHelper);
+                    scrapeBook(driver, bookId, databaseHelper, force);
                     break;
                 } catch (SQLException e) {
                     getLogger().log(Level.SEVERE, "SQLException thrown while scraping book `" + bookId + "`.", e);
@@ -268,12 +277,8 @@ public class CommonSenseMedia extends SiteScraper {
                     getLogger().log(Level.WARNING, "Unable to find web element for book `" + bookId + "`.", e);
                 } catch (TimeoutException e) {
                     getLogger().log(Level.WARNING, "Received timeout while scraping book `" + bookId + "`.", e);
-                    try {
-                        // Give the site 10 seconds to recover.
-                        Thread.sleep(10000L);
-                    } catch (InterruptedException ie) {
-                        ie.printStackTrace();
-                    }
+                    // Give the site 10 seconds to recover.
+                    DriverUtils.sleep(10000L);
                 }
                 retries--;
             }
@@ -281,33 +286,46 @@ public class CommonSenseMedia extends SiteScraper {
         getLogger().log(Level.INFO, "Done scraping details.");
     }
 
-    @SuppressWarnings("StatementWithEmptyBody")
-    private void scrapeBook(WebDriver driver, String bookId, DatabaseHelper databaseHelper) throws SQLException, NoSuchElementException {
-        // Ignore books which are fresh enough.
-        if (!databaseHelper.shouldUpdateBook(bookId)) {
-            return;
+    private boolean shouldUpdateBook(DatabaseHelper databaseHelper, String id) {
+        // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
+        try {
+            return !databaseHelper.recordExists(DatabaseHelper.TABLE_COMMONSENSEMEDIA_BOOKS, "id", id);
+        } catch (SQLException ignored) {
         }
-        // Scrape this book.
-        getLogger().log(Level.INFO, "Scraping book: `" + bookId + "`.");
+        return true;
+    }
+
+    private void scrapeBook(WebDriver driver, String bookId, DatabaseHelper databaseHelper, boolean force) throws SQLException, NoSuchElementException {
         driver.navigate().to("https://www.commonsensemedia.org/book-reviews/" + bookId);
+        DriverUtils.sleep(1500L);
+
         // Create the book record to be saved in the database.
         final Book book = new Book();
         book.id = bookId;
+
+        // Find the `content` <div>.
         final WebElement contentDiv = driver.findElement(By.id("content"));
+
+        // Find the top wrapper (upper section).
         final WebElement topWrapperDiv = contentDiv.findElement(By.className("panel-content-top-wrapper"));
+        final WebElement topDiv = topWrapperDiv.findElement(By.className("panel-content-top"));
+
         // Extract title.
-        final WebElement titleDiv = topWrapperDiv.findElement(By.className("pane-node-title"));
+        final WebElement titleDiv = topDiv.findElement(By.className("pane-node-title"));
         book.title = titleDiv.getText().trim();
-        // Extract age, stars, and kicker (one-liner).
-        final WebElement contentTopMainDiv = topWrapperDiv.findElement(By.className("panel-content-top-main"));
-        final WebElement recommendedAgeDiv = contentTopMainDiv.findElement(By.className("field-name-field-review-recommended-age"));
+
+        // Extract age.
+        final WebElement topMainDiv = topDiv.findElement(By.className("panel-content-top-main"));
+        final WebElement recommendedAgeDiv = topMainDiv.findElement(By.className("field-name-field-review-recommended-age"));
         final String ageText = recommendedAgeDiv.getText().trim();
         if (ageText.startsWith("age ")) {
             book.age = ageText.substring("age ".length()).trim();
         } else {
             book.age = ageText;
         }
-        final WebElement paneNodeFieldStarsRatingDiv = contentTopMainDiv.findElement(By.className("pane-node-field-stars-rating"));
+
+        // Extract stars.
+        final WebElement paneNodeFieldStarsRatingDiv = topMainDiv.findElement(By.className("pane-node-field-stars-rating"));
         final WebElement fieldStarsRatingDiv = paneNodeFieldStarsRatingDiv.findElement(By.className("field_stars_rating"));
         final String starsClasses = fieldStarsRatingDiv.getAttribute("class");
         final int starsRatingIndex = starsClasses.indexOf("rating-");
@@ -321,10 +339,40 @@ public class CommonSenseMedia extends SiteScraper {
         } else {
             getLogger().log(Level.WARNING, "Unable to find `rating-` in stars class attribute: `" + starsClasses + "`.");
         }
-        final WebElement oneLinerDiv = contentTopMainDiv.findElement(By.className("pane-node-field-one-liner"));
+
+        // Extract kicker.
+        final WebElement oneLinerDiv = topMainDiv.findElement(By.className("pane-node-field-one-liner"));
         book.kicker = oneLinerDiv.getText().trim();
+
+        // Extract purchase links.
+        final WebElement topRightDiv = topDiv.findElement(By.className("panel-content-top-right"));
+        final WebElement buyLinksListDiv = topRightDiv.findElement(By.id("buy-links-list"));
+        final WebElement buyLinksDiv = buyLinksListDiv.findElement(By.className("buy-links"));
+        final WebElement buyLinksWrapperDiv = buyLinksDiv.findElement(By.className("buy-links-wrapper"));
+        try {
+            final WebElement buyLinksUl = buyLinksWrapperDiv.findElement(By.tagName("ul"));
+            final List<WebElement> buyLinksLis = buyLinksUl.findElements(By.tagName("li"));
+            for (WebElement buyLinksLi : buyLinksLis) {
+                final String idType = buyLinksLi.getAttribute("id_type").trim();
+                final String url = buyLinksLi.getAttribute("url").trim();
+                if ("asinproduct".equals(idType)) {
+                    book.amazonUrl = url;
+                } else if ("itunes".equals(idType)) {
+                    book.appleBooksUrl = url;
+                } else if ("googleplay".equals(idType)) {
+                    book.googlePlayUrl = url;
+                } else {
+                    getLogger().log(Level.WARNING, "Unknown purchase link for book `" + bookId + "`: id_type=`" + idType + "`, url=`" + url + "`.");
+                }
+            }
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.INFO, "Unable to find purchase links for book `" + bookId + "`. They may not exist.");
+        }
+
+        // Find the center wrapper (section).
         final WebElement centerWrapperDiv = contentDiv.findElement(By.className("center-wrapper"));
         final WebElement contentMidMainDiv = centerWrapperDiv.findElement(By.className("panel-content-mid-main"));
+
         // Extract categories for this book.
         final List<BookCategory> bookCategories = new ArrayList<>();
         final WebElement contentGridContainerDiv = contentMidMainDiv.findElement(By.className("pane-node-field-collection-content-grid"));
@@ -370,18 +418,22 @@ public class CommonSenseMedia extends SiteScraper {
                 getLogger().log(Level.WARNING, "Unable to find element in content grid `field-item` element.", e);
             }
         }
+
         // Extract 'What Parents Need to Know'.
         final WebElement knowDiv = contentMidMainDiv.findElement(By.className("pane-node-field-parents-need-to-know"));
         final WebElement knowTextDiv = knowDiv.findElement(By.className("field-name-field-parents-need-to-know"));
         book.know = knowTextDiv.getAttribute("textContent").trim();
+
         // Extract 'What's the Story?'.
         final WebElement storyDiv = contentMidMainDiv.findElement(By.className("pane-node-field-what-is-story"));
         final WebElement storyTextDiv = storyDiv.findElement(By.className("field-name-field-what-is-story"));
         book.story = storyTextDiv.getAttribute("textContent").trim();
+
         // Extract 'Is It Any Good?'.
         final WebElement goodDiv = contentMidMainDiv.findElement(By.className("pane-node-field-any-good"));
         final WebElement goodTextDiv = goodDiv.findElement(By.className("field-name-field-any-good"));
         book.good = goodTextDiv.getAttribute("textContent").trim();
+
         // Extract 'Talk to Your Kids About...'.
         try {
             final WebElement talkDiv = contentMidMainDiv.findElement(By.className("pane-node-field-family-topics"));
@@ -402,6 +454,7 @@ public class CommonSenseMedia extends SiteScraper {
             // See `https://www.commonsensemedia.org/book-reviews/an-awesome-book-of-love`.
             getLogger().log(Level.WARNING, "Unable to find 'Talk to your kids about...` section.", e);
         }
+
         // Extract authors, illustrators, genre, topics, type, publishers, publishing date, pages.
         final WebElement detailsDiv = contentMidMainDiv.findElement(By.className("pane-product-details"));
         final WebElement detailsUl = detailsDiv.findElement(By.id("review-product-details-list"));
@@ -451,182 +504,23 @@ public class CommonSenseMedia extends SiteScraper {
                 getLogger().log(Level.WARNING, "Unknown book details prefix: `" + detailsText + "`.");
             }
         }
+
         // Set the time when this book was last updated.
         book.lastUpdated = System.currentTimeMillis();
+
         // Add the book and the book categories to the database.
-        final int bookResult = databaseHelper.insertBook(book);
-        if (bookResult != 1) {
+        final int bookResult = databaseHelper.insert(book, force);
+        if (bookResult == 1) {
+            getLogger().log(Level.INFO, "Successfully scraped book `" + bookId + "`.");
+        } else {
             getLogger().log(Level.WARNING, "Unusual database response `" + bookResult + "` when inserting book `" + bookId + "`.");
         }
         for (BookCategory bookCategory : bookCategories) {
-            final int categoryResult = databaseHelper.insertBookCategory(bookCategory);
-            if (categoryResult != 1) {
-                getLogger().log(Level.WARNING, "Unusual database response `" + categoryResult + "` when inserting book category `" + bookId + ":" + bookCategory.categoryId + "`.");
-            }
-        }
-    }
-
-    private static class DatabaseHelper extends AbstractDatabaseHelper {
-        private static final String TABLE_BOOKS = "Books";
-        private static final String TABLE_BOOK_CATEGORIES = "BookCategories";
-
-        DatabaseHelper(Logger logger) {
-            super(logger);
-        }
-
-        boolean shouldUpdateBook(String id) throws SQLException {
-            // TODO: Check freshness of DB entry. Re-scrape the book details if its data is relatively stale.
-            return !bookExists(id);
-        }
-
-        boolean bookExists(String id) throws SQLException {
-            return recordExists(TABLE_BOOKS, "id", id);
-        }
-
-        int insertBook(Book book) throws SQLException {
-            createTableIfNeeded(TABLE_BOOKS);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKS +
-                    "(id,title,authors,illustrators,age,stars,kicker,amazon_url,apple_books_url,google_play_url,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)" +
-                    " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
-            insert.setString(1, book.id);
-            insert.setString(2, book.title);
-            insert.setString(3, book.authors);
-            setStringOrNull(insert, 4, book.illustrators);
-            insert.setString(5, book.age);
-            insert.setInt(6, book.stars);
-            insert.setString(7, book.kicker);
-            setStringOrNull(insert, 8, book.amazonUrl);
-            setStringOrNull(insert, 9, book.appleBooksUrl);
-            setStringOrNull(insert, 10, book.googlePlayUrl);
-            insert.setString(11, book.genre);
-            setStringOrNull(insert, 12, book.topics);
-            insert.setString(13, book.type);
-            setStringOrNull(insert, 14, book.know);
-            setStringOrNull(insert, 15, book.story);
-            setStringOrNull(insert, 16, book.good);
-            setStringOrNull(insert, 17, book.talk);
-            setStringOrNull(insert, 18, book.publishers);
-            setStringOrNull(insert, 19, book.publicationDate);
-            setStringOrNull(insert, 20, book.publishersRecommendedAges);
-            setIntOrNull(insert, 21, book.pages, -1);
-            insert.setLong(22, book.lastUpdated);
-            final int result = insert.executeUpdate();
-            insert.close();
-            return result;
-        }
-
-        int insertBookCategory(BookCategory bookCategory) throws SQLException {
-            createTableIfNeeded(TABLE_BOOK_CATEGORIES);
-            final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOK_CATEGORIES +
-                    "(book_id,category_id,level,explanation)" +
-                    " VALUES(?,?,?,?);");
-            insert.setString(1, bookCategory.bookId);
-            insert.setString(2, bookCategory.categoryId);
-            insert.setInt(3, bookCategory.level);
-            setStringOrNull(insert, 4, bookCategory.explanation);
-            final int result = insert.executeUpdate();
-            insert.close();
-            return result;
-        }
-
-        public List<Book> getBooks() throws SQLException {
-            final List<Book> books = new ArrayList<>();
-            final Statement select = getConnection().createStatement();
-            final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_BOOKS + ";");
-            while (result.next()) {
-                final Book book = makeBookFromResult(result);
-                books.add(book);
-            }
-            select.close();
-            return Collections.unmodifiableList(books);
-        }
-
-        public List<BookCategory> getBookCategories() throws SQLException {
-            final List<BookCategory> bookCategories = new ArrayList<>();
-            final Statement select = getConnection().createStatement();
-            final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_BOOK_CATEGORIES + ";");
-            while (result.next()) {
-                final BookCategory bookCategory = makeBookCategoryFromResult(result);
-                bookCategories.add(bookCategory);
-            }
-            select.close();
-            return Collections.unmodifiableList(bookCategories);
-        }
-
-        private Book makeBookFromResult(ResultSet result) throws SQLException {
-            final Book book = new Book();
-            book.id = result.getString("id");
-            book.title = result.getString("title");
-            book.authors = result.getString("authors");
-            book.illustrators = result.getString("illustrators");
-            book.age = result.getString("age");
-            book.stars = result.getInt("stars");
-            book.kicker = result.getString("kicker");
-            book.amazonUrl = result.getString("amazon_url");
-            book.appleBooksUrl = result.getString("apple_books_url");
-            book.googlePlayUrl = result.getString("google_play_url");
-            book.genre = result.getString("genre");
-            book.topics = result.getString("topics");
-            book.type = result.getString("type");
-            book.know = result.getString("know");
-            book.story = result.getString("story");
-            book.good = result.getString("good");
-            book.talk = result.getString("talk");
-            book.publishers = result.getString("publishers");
-            book.publicationDate = result.getString("publication_date");
-            book.publishersRecommendedAges = result.getString("publishers_recommended_ages");
-            book.pages = getIntOrNull(result, "pages", -1);
-            book.lastUpdated = result.getLong("last_updated");
-            return book;
-        }
-
-        private BookCategory makeBookCategoryFromResult(ResultSet result) throws SQLException {
-            final BookCategory bookCategory = new BookCategory();
-            bookCategory.bookId = result.getString("book_id");
-            bookCategory.categoryId = result.getString("category_id");
-            bookCategory.level = result.getInt("level");
-            bookCategory.explanation = result.getString("explanation");
-            return bookCategory;
-        }
-
-        @Override
-        public void createTableIfNeeded(String name) throws SQLException {
-            if (TABLE_BOOKS.equalsIgnoreCase(name)) {
-                final Statement statement = getConnection().createStatement();
-                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOKS + " (" +
-                        " id TEXT PRIMARY KEY" + // the-unwanted-stories-of-the-syrian-refugees
-                        ", title TEXT NOT NULL" + // The Unwanted: Stories of the Syrian Refugees
-                        ", authors TEXT NOT NULL" + // Don Brown
-                        ", illustrators TEXT DEFAULT NULL" + // Don Brown
-                        ", age TEXT NOT NULL" + // 13+
-                        ", stars INTEGER NOT NULL" + // 5
-                        ", kicker TEXT NOT NULL" + // Compassionate graphic novel account of refugees' struggle.
-                        ", amazon_url TEXT DEFAULT NULL" +
-                        ", apple_books_url TEXT DEFAULT NULL" +
-                        ", google_play_url TEXT DEFAULT NULL" +
-                        ", genre TEXT NOT NULL" + // graphic novel
-                        ", topics TEXT DEFAULT NULL" + // history,misfits and underdogs,pirates
-                        ", type TEXT NOT NULL" + // non-fiction
-                        ", know TEXT DEFAULT NULL" + // Parents need to know that The Unwanted is a nonfiction graphic novel written and illustrated by...
-                        ", story TEXT DEFAULT NULL" + // Beginning in 2011, THE UNWANTED shows how the simple act of spray-painting...
-                        ", good TEXT DEFAULT NULL" + // The issues surrounding the ongoing Syrian refugee crisis are numerous and complex,...
-                        ", talk TEXT DEFAULT NULL" + // Families can talk about the conditions that force people to leave their homes...
-                        ", publishers TEXT DEFAULT NULL" + // HMH Books for Young Readers
-                        ", publication_date TEXT DEFAULT NULL" + // September 18, 2018 -> 2018-09-18
-                        ", publishers_recommended_ages TEXT DEFAULT NULL" + // NULL or '13 - 18'
-                        ", pages INTEGER DEFAULT NULL" + // 112
-                        ", last_updated INTEGER NOT NULL" + // System.currentTimeMillis() -> long
-                        ");");
-            } else if (TABLE_BOOK_CATEGORIES.equalsIgnoreCase(name)) {
-                final Statement statement = getConnection().createStatement();
-                statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_BOOK_CATEGORIES + " (" +
-                        " book_id TEXT NOT NULL" + // the-unwanted-stories-of-the-syrian-refugees
-                        ", category_id TEXT NOT NULL" +
-                        ", level INTEGER NOT NULL" +
-                        ", explanation TEXT DEFAULT NULL" +
-                        ");");
+            final int categoryResult = databaseHelper.insert(bookCategory, force);
+            if (categoryResult == 1) {
+                getLogger().log(Level.INFO, "Successfully scraped book category `" + bookCategory.categoryId + "` for book `" + bookCategory.bookId + "`.");
             } else {
-                throw new IllegalArgumentException("Unknown table name: `" + name + "`.");
+                getLogger().log(Level.WARNING, "Unusual database response `" + categoryResult + "` when inserting book category `" + bookId + ":" + bookCategory.categoryId + "`.");
             }
         }
     }

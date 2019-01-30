@@ -1,8 +1,8 @@
 package com.ericrobertbrewer.bookspider.sites.meta;
 
-import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.Folders;
 import com.ericrobertbrewer.bookspider.Launcher;
+import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper;
 import com.ericrobertbrewer.bookspider.sites.text.AmazonKindle;
@@ -574,8 +574,7 @@ public class BookCave extends SiteScraper {
         return bookScrapeInfos;
     }
 
-    @SuppressWarnings("unused")
-    private static class AmazonPreviewProvider implements Provider<AmazonPreview> {
+    public static class AmazonPreviewProvider implements Provider<AmazonPreview> {
 
         public static void main(String[] args) throws IOException {
             Launcher.launch(args, new AmazonPreviewProvider());
@@ -607,8 +606,7 @@ public class BookCave extends SiteScraper {
         }
     }
 
-    @SuppressWarnings("unused")
-    private static class AmazonKindleProvider implements Provider<AmazonKindle>, AmazonKindle.Listener {
+    public static class AmazonKindleProvider implements Provider<AmazonKindle>, AmazonKindle.Listener {
 
         public static void main(String[] args) throws IOException {
             Launcher.launch(args, new AmazonKindleProvider());
@@ -647,7 +645,7 @@ public class BookCave extends SiteScraper {
         public void onUpdateBook(String bookId, String asin) {
             // Update only the `asin` field for the BookCaveBook row.
             try {
-                final int updateResult = databaseHelper.updateBookAsin(bookId, asin);
+                final int updateResult = databaseHelper.updateBookCaveBookAsin(bookId, asin);
                 if (updateResult != 1) {
                     databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + updateResult + "` after updating book `" + bookId + "`.");
                 }

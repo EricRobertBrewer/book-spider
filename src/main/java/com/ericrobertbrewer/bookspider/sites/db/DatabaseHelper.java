@@ -41,9 +41,13 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
      * @throws SQLException When an error occurs.
      */
     public int insertOrReplace(AmazonKindle.Book book) throws SQLException {
-        final PreparedStatement insertOrReplace = getConnection().prepareStatement("INSERT OR REPLACE INTO " + TABLE_AMAZON_BOOKS +
-                "(asin,is_kindle_unlimited,price,last_updated)" +
-                " VALUES(?,?,?,?);");
+        final PreparedStatement insertOrReplace = getConnection().prepareStatement("INSERT OR REPLACE" +
+                " INTO " + TABLE_AMAZON_BOOKS + "(" +
+                "asin" +
+                ",is_kindle_unlimited" +
+                ",price" +
+                ",last_updated" +
+                ") VALUES(?,?,?,?);");
         insertOrReplace.setString(1, book.asin);
         insertOrReplace.setBoolean(2, book.isKindleUnlimited);
         setStringOrNull(insertOrReplace, 3, book.price);
@@ -54,16 +58,29 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
     }
 
     public int insert(BookCave.Book book) throws SQLException {
-        final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKCAVE_BOOKS + "(" +
-                "id,title,authors,summary,description," +
-                "community_ratings_count,community_average_rating,pages,genres,amazon_kindle_url," +
-                "amazon_print_url,audible_url,apple_books_url,barnes_and_noble_url,barnes_and_noble_audiobook_url," +
-                "barnes_and_noble_print_url,google_play_url,kobo_url,smashwords_url,last_updated" +
-                ")  VALUES(" +
-                "?,?,?,?,?," +
-                "?,?,?,?,?," +
-                "?,?,?,?,?," +
-                "?,?,?,?,?);");
+        final PreparedStatement insert = getConnection().prepareStatement("INSERT" +
+                " INTO " + TABLE_BOOKCAVE_BOOKS + "(" +
+                "id" +
+                ",title" +
+                ",authors" +
+                ",summary" +
+                ",description" +
+                ",community_ratings_count" +
+                ",community_average_rating" +
+                ",pages" +
+                ",genres" +
+                ",amazon_kindle_url" +
+                ",amazon_print_url" +
+                ",audible_url" +
+                ",apple_books_url" +
+                ",barnes_and_noble_url" +
+                ",barnes_and_noble_audiobook_url" +
+                ",barnes_and_noble_print_url" +
+                ",google_play_url" +
+                ",kobo_url" +
+                ",smashwords_url" +
+                ",last_updated" +
+                ")  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
         insert.setString(1, book.id);
         insert.setString(2, book.title);
         insert.setString(3, book.authors);
@@ -90,9 +107,12 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
     }
 
     public int insert(BookCave.BookRating rating) throws SQLException {
-        final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKCAVE_BOOK_RATINGS +
-                "(book_id,rating,count)" +
-                " VALUES(?,?,?);");
+        final PreparedStatement insert = getConnection().prepareStatement("INSERT" +
+                " INTO " + TABLE_BOOKCAVE_BOOK_RATINGS + "(" +
+                "book_id" +
+                ",rating" +
+                ",count" +
+                ") VALUES(?,?,?);");
         insert.setString(1, rating.bookId);
         insert.setString(2, rating.rating);
         insert.setInt(3, rating.count);
@@ -102,9 +122,13 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
     }
 
     public int insert(BookCave.BookRatingLevel level) throws SQLException {
-        final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_BOOKCAVE_BOOK_RATING_LEVELS +
-                "(book_id,rating,title,count)" +
-                " VALUES(?,?,?,?);");
+        final PreparedStatement insert = getConnection().prepareStatement("INSERT" +
+                " INTO " + TABLE_BOOKCAVE_BOOK_RATING_LEVELS + "(" +
+                "book_id" +
+                ",rating" +
+                ",title" +
+                ",count" +
+                ") VALUES(?,?,?,?);");
         insert.setString(1, level.bookId);
         insert.setString(2, level.rating);
         insert.setString(3, level.title);
@@ -114,10 +138,32 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         return result;
     }
 
-    public int insert(CommonSenseMedia.Book book) throws SQLException {
-        final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_COMMONSENSEMEDIA_BOOKS +
-                "(id,title,authors,illustrators,age,stars,kicker,amazon_url,apple_books_url,google_play_url,genre,topics,type,know,story,good,talk,publishers,publication_date,publishers_recommended_ages,pages,last_updated)" +
-                " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
+    public int insert(CommonSenseMedia.Book book, boolean orReplace) throws SQLException {
+        final PreparedStatement insert = getConnection().prepareStatement("INSERT" + (orReplace ? " OR REPLACE" : "") +
+                " INTO " + TABLE_COMMONSENSEMEDIA_BOOKS + "(" +
+                "id" +
+                ",title" +
+                ",authors" +
+                ",illustrators" +
+                ",age" +
+                ",stars" +
+                ",kicker" +
+                ",amazon_url" +
+                ",apple_books_url" +
+                ",google_play_url" +
+                ",genre" +
+                ",topics" +
+                ",type" +
+                ",know" +
+                ",story" +
+                ",good" +
+                ",talk" +
+                ",publishers" +
+                ",publication_date" +
+                ",publishers_recommended_ages" +
+                ",pages" +
+                ",last_updated" +
+                ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);");
         insert.setString(1, book.id);
         insert.setString(2, book.title);
         insert.setString(3, book.authors);
@@ -145,10 +191,14 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         return result;
     }
 
-    public int insert(CommonSenseMedia.BookCategory bookCategory) throws SQLException {
-        final PreparedStatement insert = getConnection().prepareStatement("INSERT INTO " + TABLE_COMMONSENSEMEDIA_BOOK_CATEGORIES +
-                "(book_id,category_id,level,explanation)" +
-                " VALUES(?,?,?,?);");
+    public int insert(CommonSenseMedia.BookCategory bookCategory, boolean orReplace) throws SQLException {
+        final PreparedStatement insert = getConnection().prepareStatement("INSERT" + (orReplace ? " OR REPLACE" : "") +
+                " INTO " + TABLE_COMMONSENSEMEDIA_BOOK_CATEGORIES + "(" +
+                "book_id" +
+                ",category_id" +
+                ",level" +
+                ",explanation" +
+                ") VALUES(?,?,?,?);");
         insert.setString(1, bookCategory.bookId);
         insert.setString(2, bookCategory.categoryId);
         insert.setInt(3, bookCategory.level);
@@ -159,7 +209,8 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
     }
 
     public AmazonKindle.Book getAmazonBook(String asin) throws SQLException {
-        final PreparedStatement select = getConnection().prepareStatement("SELECT * FROM " + TABLE_AMAZON_BOOKS +
+        final PreparedStatement select = getConnection().prepareStatement("SELECT *" +
+                " FROM " + TABLE_AMAZON_BOOKS +
                 " WHERE asin=?;");
         select.setString(1, asin);
         final ResultSet result = select.executeQuery();
@@ -172,7 +223,8 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
     }
 
     public BookCave.Book getBookCaveBook(String id) throws SQLException {
-        final PreparedStatement select = getConnection().prepareStatement("SELECT * FROM " + TABLE_BOOKCAVE_BOOKS +
+        final PreparedStatement select = getConnection().prepareStatement("SELECT *" +
+                " FROM " + TABLE_BOOKCAVE_BOOKS +
                 " WHERE id=?;");
         select.setString(1, id);
         final ResultSet result = select.executeQuery();
@@ -196,15 +248,40 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         return Collections.unmodifiableList(books);
     }
 
-    public int updateBookAsin(String bookId, String asin) throws SQLException {
-        final PreparedStatement update = getConnection().prepareStatement("UPDATE " + DatabaseHelper.TABLE_BOOKCAVE_BOOKS + " SET " +
-                "asin=?" +
+    public int updateBookCaveBookAsin(String bookId, String asin) throws SQLException {
+        final PreparedStatement update = getConnection().prepareStatement("UPDATE " + TABLE_BOOKCAVE_BOOKS +
+                " SET" +
+                " asin=?" +
                 " WHERE id=?;");
         update.setString(1, asin);
         update.setString(2, bookId);
         final int result = update.executeUpdate();
         update.close();
         return result;
+    }
+
+    public List<CommonSenseMedia.Book> getCommonSenseMediaBooks() throws SQLException {
+        final List<CommonSenseMedia.Book> books = new ArrayList<>();
+        final Statement select = getConnection().createStatement();
+        final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_COMMONSENSEMEDIA_BOOKS + ";");
+        while (result.next()) {
+            final CommonSenseMedia.Book book = makeCommonSenseMediaBookFromResult(result);
+            books.add(book);
+        }
+        select.close();
+        return Collections.unmodifiableList(books);
+    }
+
+    public List<CommonSenseMedia.BookCategory> getCommonSsenseMediaBookCategories() throws SQLException {
+        final List<CommonSenseMedia.BookCategory> bookCategories = new ArrayList<>();
+        final Statement select = getConnection().createStatement();
+        final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_COMMONSENSEMEDIA_BOOK_CATEGORIES + ";");
+        while (result.next()) {
+            final CommonSenseMedia.BookCategory bookCategory = makeCommonSenseMediaBookCategoryFromResult(result);
+            bookCategories.add(bookCategory);
+        }
+        select.close();
+        return Collections.unmodifiableList(bookCategories);
     }
 
     private void createTablesIfNeeded() {
@@ -279,7 +356,7 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         } else if (TABLE_COMMONSENSEMEDIA_BOOKS.equalsIgnoreCase(name)) {
             final Statement statement = getConnection().createStatement();
             statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_COMMONSENSEMEDIA_BOOKS + " (" +
-                    " id TEXT PRIMARY KEY" + // the-unwanted-stories-of-the-syrian-refugees
+                    "id TEXT PRIMARY KEY" + // the-unwanted-stories-of-the-syrian-refugees
                     ", title TEXT NOT NULL" + // The Unwanted: Stories of the Syrian Refugees
                     ", authors TEXT NOT NULL" + // Don Brown
                     ", illustrators TEXT DEFAULT NULL" + // Don Brown
@@ -301,11 +378,12 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
                     ", publishers_recommended_ages TEXT DEFAULT NULL" + // NULL or '13 - 18'
                     ", pages INTEGER DEFAULT NULL" + // 112
                     ", last_updated INTEGER NOT NULL" + // System.currentTimeMillis() -> long
+                    ", asin TEXT DEFAULT NULL" +
                     ");");
         } else if (TABLE_COMMONSENSEMEDIA_BOOK_CATEGORIES.equalsIgnoreCase(name)) {
             final Statement statement = getConnection().createStatement();
             statement.execute("CREATE TABLE IF NOT EXISTS " + TABLE_COMMONSENSEMEDIA_BOOK_CATEGORIES + " (" +
-                    " book_id TEXT NOT NULL" + // the-unwanted-stories-of-the-syrian-refugees
+                    "book_id TEXT NOT NULL" + // the-unwanted-stories-of-the-syrian-refugees
                     ", category_id TEXT NOT NULL" +
                     ", level INTEGER NOT NULL" +
                     ", explanation TEXT DEFAULT NULL" +
@@ -349,5 +427,42 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         book.lastUpdated = result.getLong("last_updated");
         book.asin = result.getString("asin");
         return book;
+    }
+
+    private CommonSenseMedia.Book makeCommonSenseMediaBookFromResult(ResultSet result) throws SQLException {
+        final CommonSenseMedia.Book book = new CommonSenseMedia.Book();
+        book.id = result.getString("id");
+        book.title = result.getString("title");
+        book.authors = result.getString("authors");
+        book.illustrators = result.getString("illustrators");
+        book.age = result.getString("age");
+        book.stars = result.getInt("stars");
+        book.kicker = result.getString("kicker");
+        book.amazonUrl = result.getString("amazon_url");
+        book.appleBooksUrl = result.getString("apple_books_url");
+        book.googlePlayUrl = result.getString("google_play_url");
+        book.genre = result.getString("genre");
+        book.topics = result.getString("topics");
+        book.type = result.getString("type");
+        book.know = result.getString("know");
+        book.story = result.getString("story");
+        book.good = result.getString("good");
+        book.talk = result.getString("talk");
+        book.publishers = result.getString("publishers");
+        book.publicationDate = result.getString("publication_date");
+        book.publishersRecommendedAges = result.getString("publishers_recommended_ages");
+        book.pages = getIntOrNull(result, "pages", -1);
+        book.lastUpdated = result.getLong("last_updated");
+        book.asin = result.getString("asin");
+        return book;
+    }
+
+    private CommonSenseMedia.BookCategory makeCommonSenseMediaBookCategoryFromResult(ResultSet result) throws SQLException {
+        final CommonSenseMedia.BookCategory bookCategory = new CommonSenseMedia.BookCategory();
+        bookCategory.bookId = result.getString("book_id");
+        bookCategory.categoryId = result.getString("category_id");
+        bookCategory.level = result.getInt("level");
+        bookCategory.explanation = result.getString("explanation");
+        return bookCategory;
     }
 }

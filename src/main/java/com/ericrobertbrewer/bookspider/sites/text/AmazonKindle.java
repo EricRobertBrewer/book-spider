@@ -99,6 +99,7 @@ public class AmazonKindle extends SiteScraper {
                 driver.quit();
                 // Finish.
                 if (scrapeThreadsRunning.decrementAndGet() == 0) {
+                    databaseHelper.close();
                     callback.onComplete();
                 }
             });
@@ -290,9 +291,9 @@ public class AmazonKindle extends SiteScraper {
             amazonBook.isKindleUnlimited = isKindleUnlimited;
             amazonBook.price = price;
             amazonBook.lastUpdated = System.currentTimeMillis();
-            final int amazonResult = databaseHelper.insertOrReplace(amazonBook);
-            if (amazonResult != 1) {
-                databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + amazonResult + "` after updating Amazon book `asin=" + asin + "`.");
+            final int result = databaseHelper.insertOrReplace(amazonBook);
+            if (result != 1) {
+                databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + result + "` after updating Amazon book asin=`" + asin + "`.");
             }
         } catch (SQLException e) {
             databaseHelper.getLogger().log(Level.SEVERE, "Unable to update Amazon book `asin=" + asin + "` in database.");
