@@ -41,19 +41,23 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
      * @throws SQLException When an error occurs.
      */
     public int insertOrReplace(AmazonKindle.Book book) throws SQLException {
-        final PreparedStatement insertOrReplace = getConnection().prepareStatement("INSERT OR REPLACE" +
+        final PreparedStatement insert = getConnection().prepareStatement("INSERT OR REPLACE" +
                 " INTO " + TABLE_AMAZON_BOOKS + "(" +
                 "asin" +
+                ",title" +
                 ",is_kindle_unlimited" +
+                ",is_freetime_unlimited" +
                 ",price" +
                 ",last_updated" +
-                ") VALUES(?,?,?,?);");
-        insertOrReplace.setString(1, book.asin);
-        insertOrReplace.setBoolean(2, book.isKindleUnlimited);
-        setStringOrNull(insertOrReplace, 3, book.price);
-        insertOrReplace.setLong(4, book.lastUpdated);
-        final int result = insertOrReplace.executeUpdate();
-        insertOrReplace.close();
+                ") VALUES(?,?,?,?,?,?);");
+        insert.setString(1, book.asin);
+        insert.setString(2, book.title);
+        insert.setBoolean(3, book.isKindleUnlimited);
+        insert.setBoolean(4, book.isFreeTimeUnlimited);
+        setStringOrNull(insert, 5, book.price);
+        insert.setLong(6, book.lastUpdated);
+        final int result = insert.executeUpdate();
+        insert.close();
         return result;
     }
 
@@ -319,7 +323,9 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
             final Statement create = getConnection().createStatement();
             create.execute("CREATE TABLE IF NOT EXISTS " + TABLE_AMAZON_BOOKS + " (" +
                     "asin TEXT PRIMARY KEY" +
+                    ", title TEXT DEFAULT NULL" +
                     ", is_kindle_unlimited BOOLEAN DEFAULT 0" +
+                    ", is_freetime_unlimited BOOLEAN DEFAULT 0" +
                     ", price TEXT DEFAULT NULL" +
                     ", last_updated INTEGER DEFAULT NULL" +
                     ");");
@@ -409,7 +415,9 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
     private AmazonKindle.Book makeAmazonBookFromResult(ResultSet result) throws SQLException {
         final AmazonKindle.Book book = new AmazonKindle.Book();
         book.asin = result.getString("asin");
+        book.title = result.getString("title");
         book.isKindleUnlimited = result.getBoolean("is_kindle_unlimited");
+        book.isFreeTimeUnlimited = result.getBoolean("is_freetime_unlimited");
         book.price = result.getString("price");
         book.lastUpdated = getLongOrNull(result, "last_updated", -1L);
         return book;

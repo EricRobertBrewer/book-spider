@@ -281,6 +281,8 @@ public class CommonSenseMedia extends SiteScraper {
                     getLogger().log(Level.WARNING, "Received timeout while scraping book `" + bookId + "`.", e);
                     // Give the site 10 seconds to recover.
                     DriverUtils.sleep(10000L);
+                } catch (Throwable t) {
+                    getLogger().log(Level.WARNING, "Unknown exception while scraping book `" + bookId + "`.", t);
                 }
                 retries--;
             }
@@ -454,7 +456,7 @@ public class CommonSenseMedia extends SiteScraper {
         } catch (NoSuchElementException e) {
             // May not exist.
             // See `https://www.commonsensemedia.org/book-reviews/an-awesome-book-of-love`.
-            getLogger().log(Level.WARNING, "Unable to find 'Talk to your kids about...` section.", e);
+            getLogger().log(Level.WARNING, "Unable to find 'Talk to your kids about...` section for book `" + bookId + "`. It may not exist.");
         }
 
         // Extract authors, illustrators, genre, topics, type, publishers, publishing date, pages.

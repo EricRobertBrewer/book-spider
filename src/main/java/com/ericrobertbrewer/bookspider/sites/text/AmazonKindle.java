@@ -28,8 +28,10 @@ public class AmazonKindle extends SiteScraper {
     }
 
     public static class Book {
-        public String asin = null;
+        public String asin;
+        public String title = null;
         public boolean isKindleUnlimited = false;
+        public boolean isFreeTimeUnlimited = false;
         public String price = null;
         public long lastUpdated = -1L;
     }
@@ -255,7 +257,9 @@ public class AmazonKindle extends SiteScraper {
         // Extract this book's significant Amazon database fields.
         final PurchaseType purchaseType = getPurchaseType(dpContainerDiv, layoutType);
         boolean isKindleUnlimited = false;
+        boolean isFreeTimeUnlimited = false;
         String price = null;
+        // TODO: Check if a book has already been borrowed through FreeTime Unlimited.
         switch (purchaseType) {
             case PURCHASE_OWNED:
                 price = getBookPrice(dpContainerDiv, layoutType);
@@ -268,6 +272,10 @@ public class AmazonKindle extends SiteScraper {
             case KINDLE_UNLIMITED_AVAILABLE:
                 getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is available through Kindle Unlimited.");
                 isKindleUnlimited = true;
+                break;
+            case FREETIME_UNLIMITED_AVAILABLE:
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "`` is available through FreeTime Unlimited.");
+                isFreeTimeUnlimited = true;
                 break;
             case PURCHASE_AVAILABLE:
                 price = getBookPrice(dpContainerDiv, layoutType);
@@ -287,17 +295,19 @@ public class AmazonKindle extends SiteScraper {
         }
         // Update all fields for the AmazonBook row.
         try {
-            final AmazonKindle.Book amazonBook = new AmazonKindle.Book();
-            amazonBook.asin = asin;
-            amazonBook.isKindleUnlimited = isKindleUnlimited;
-            amazonBook.price = price;
-            amazonBook.lastUpdated = System.currentTimeMillis();
-            final int result = databaseHelper.insertOrReplace(amazonBook);
+            final AmazonKindle.Book book = new AmazonKindle.Book();
+            book.asin = asin;
+            book.title = title;
+            book.isKindleUnlimited = isKindleUnlimited;
+            book.isFreeTimeUnlimited = isFreeTimeUnlimited;
+            book.price = price;
+            book.lastUpdated = System.currentTimeMillis();
+            final int result = databaseHelper.insertOrReplace(book);
             if (result != 1) {
                 databaseHelper.getLogger().log(Level.WARNING, "Unexpected result `" + result + "` after updating Amazon book asin=`" + asin + "`.");
             }
         } catch (SQLException e) {
-            databaseHelper.getLogger().log(Level.SEVERE, "Unable to update Amazon book asin=`" + asin + "` in database.");
+            databaseHelper.getLogger().log(Level.SEVERE, "Unable to update Amazon book asin=`" + asin + "` in database.", e);
         }
 
         // Access this book's folder, which will contain its text and images.
@@ -357,10 +367,19 @@ public class AmazonKindle extends SiteScraper {
                 borrowBookThroughKindleUnlimited(driver, dpContainerDiv, layoutType);
             } catch (NoSuchElementException e) {
                 // We were unable to borrow the book. Probably the 10-book limit is met.
-                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`, asin=`" + asin + "`. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
+                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`, asin=`" + asin + "` through Kindle Unlimited. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
                 return;
             }
             getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` has been successfully borrowed.");
+        } else if (purchaseType == PurchaseType.FREETIME_UNLIMITED_AVAILABLE) {
+            // TODO: Can FreeTime Unlimited books even be opened in Kindle Cloud Reader?
+            try {
+                borrowBookThroughFreeTimeUnlimited(driver, dpContainerDiv, layoutType);
+            } catch (NoSuchElementException e) {
+                // Unable to borrow the book.
+                getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`, asin=`" + asin + "` through FreeTime Unlimited. Skipping.");
+                return;
+            }
         } else if (purchaseType == PurchaseType.PURCHASE_AVAILABLE) {
             if (price == null) {
                 getLogger().log(Level.SEVERE, "Unable to find price for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
@@ -619,6 +638,7 @@ public class AmazonKindle extends SiteScraper {
     private enum PurchaseType {
         KINDLE_UNLIMITED_AVAILABLE,
         KINDLE_UNLIMITED_BORROWED,
+        FREETIME_UNLIMITED_AVAILABLE,
         PURCHASE_AVAILABLE,
         PURCHASE_OWNED,
         /**
@@ -643,6 +663,8 @@ public class AmazonKindle extends SiteScraper {
             return PurchaseType.KINDLE_UNLIMITED_BORROWED;
         } else if (canBorrowBookThroughKindleUnlimited(dpContainerDiv, layoutType)) {
             return PurchaseType.KINDLE_UNLIMITED_AVAILABLE;
+        } else if (canBorrowBookThroughFreeTimeUnlimited(dpContainerDiv, layoutType)) {
+            return PurchaseType.FREETIME_UNLIMITED_AVAILABLE;
         }
         return PurchaseType.PURCHASE_AVAILABLE;
     }
@@ -716,12 +738,42 @@ public class AmazonKindle extends SiteScraper {
             borrowButton = dpContainerDiv.findElement(By.id("borrow-button"));
         }
         borrowButton.click();
+        ensureBorrowSucceeded(driver);
+    }
+
+    private void ensureBorrowSucceeded(WebDriver driver) {
         // Check if the borrowing was successful.
         try {
             DriverUtils.findElementWithRetries(driver, By.id("dbs-readnow-bookstore-rw"), 2, 2500L);
         } catch (NoSuchElementException e) {
             DriverUtils.findElementWithRetries(driver, By.id("dbs-goto-bookstore-rw"), 2, 2500L);
         }
+    }
+
+    private boolean canBorrowBookThroughFreeTimeUnlimited(WebElement dpContainerDiv, LayoutType layoutType) {
+        try {
+            if (layoutType == LayoutType.COLUMNS) {
+                final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+                buyboxDiv.findElement(By.id("upsell-button"));
+            } else {
+                dpContainerDiv.findElement(By.id("upsell-button"));
+            }
+            return true;
+        } catch (NoSuchElementException ignored) {
+        }
+        return false;
+    }
+
+    private void borrowBookThroughFreeTimeUnlimited(WebDriver driver, WebElement dpContainerDiv, LayoutType layoutType) {
+        final WebElement upsellButton;
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+            upsellButton = buyboxDiv.findElement(By.id("upsell-button"));
+        } else {
+            upsellButton = dpContainerDiv.findElement(By.id("upsell-button"));
+        }
+        upsellButton.click();
+        ensureBorrowSucceeded(driver);
     }
 
     private String getBookPrice(WebElement dpContainerDiv, LayoutType layoutType) {
