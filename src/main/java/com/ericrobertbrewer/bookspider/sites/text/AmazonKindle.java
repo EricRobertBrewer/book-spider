@@ -932,6 +932,16 @@ public class AmazonKindle extends SiteScraper {
             } catch (NoSuchElementException ignored) {
             }
 
+            // Log the footer message, just to inform us how long this book will be (# of pages and locations).
+            try {
+                final WebElement footerDiv = bookContainerDiv.findElement(By.id("kindleReader_footer"));
+                final WebElement footerReaderControlsMiddleDiv = footerDiv.findElement(By.id("kindleReader_footer_readerControls_middle"));
+                final WebElement footerMessageDiv = footerReaderControlsMiddleDiv.findElement(By.id("kindleReader_footer_message"));
+                final String footerMessage = footerMessageDiv.getAttribute("textContent").trim();
+                getLogger().log(Level.INFO, "Found Kindle reader footer message for book `" + bookId + "`, asin=`" + asin + "`: `" + footerMessage + "`.");
+            } catch (NoSuchElementException ignored) {
+            }
+
             // Find the navigation arrows.
             final WebElement touchLayerDiv;
             try {
