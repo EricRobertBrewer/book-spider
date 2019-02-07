@@ -220,18 +220,26 @@ public class AmazonKindle extends SiteScraper {
         // See `https://www.amazon.com/dp/1980537615`.
         closeKindleUnlimitedPopoverIfVisible(driver);
 
-        // Check the layout type for this book.
-        final LayoutType layoutType = getStorePageLayoutType(driver);
-        if (layoutType == LayoutType.UNKNOWN) {
-            getLogger().log(Level.SEVERE, "Found unknown store page layout type for book `" + bookId + "`. Quitting.");
+        // Check the layout type for this book on the first Amazon page, whatever type of media it happens to be.
+        final LayoutType firstLayoutType = getStorePageLayoutType(driver);
+        if (firstLayoutType == LayoutType.UNKNOWN) {
+            getLogger().log(Level.SEVERE, "Found unknown first store page layout type for book `" + bookId + "`. Quitting.");
             return;
         }
 
         // Ensure that we have navigated to the Amazon store page for the Kindle version of the book.
-        if (!navigateToKindleStorePageIfNeeded(driver, layoutType)) {
+        if (!navigateToKindleStorePageIfNeeded(driver, firstLayoutType)) {
             // It's possible that a book is simply not available on Amazon Kindle.
             // See `https://www.amazon.com/dp/0689307764`.
             getLogger().log(Level.WARNING, "Unable to navigate to the page for the Kindle version of book `" + bookId + "`. It may not exist. Skipping.");
+            return;
+        }
+
+        // Since the layout type could have changed, check the layout type for this book on the Kindle store page.
+        // See `https://www.amazon.com/Road-Jack-Kerouac-ebook-dp-B002IPZFYQ/dp/B002IPZFYQ/ref=mt_kindle?_encoding=UTF8&me=&qid=`.
+        final LayoutType layoutType = getStorePageLayoutType(driver);
+        if (layoutType == LayoutType.UNKNOWN) {
+            getLogger().log(Level.SEVERE, "Found unknown Kindle store page layout type for book `" + bookId + "`. Quitting.");
             return;
         }
 
@@ -389,7 +397,7 @@ public class AmazonKindle extends SiteScraper {
                 // "Purchase" the book.
                 purchaseBook(driver, dpContainerDiv, layoutType);
             } else {
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is neither free nor available through Kindle Unlimited. Skipping.");
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is not free on Kindle. Skipping.");
                 return;
             }
         } else if (purchaseType == PurchaseType.UNAVAILABLE) {
