@@ -124,42 +124,8 @@ public class AmazonKindle extends SiteScraper {
             final BookScrapeInfo bookScrapeInfo = queue.poll();
 
             // Check if this book can be skipped.
-            if (bookScrapeInfo.asin != null) {
-                // Fetch the Amazon book data.
-                final AmazonKindle.Book book;
-                try {
-                    book = databaseHelper.getAmazonBook(bookScrapeInfo.asin);
-                } catch (SQLException e) {
-                    getLogger().log(Level.SEVERE, "Encountered error while retrieving Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database.", e);
-                    continue;
-                }
-                if (book == null) {
-                    getLogger().log(Level.SEVERE, "Unable to retrieve Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database.");
-                    continue;
-                }
-
-                // Assume that ASINs of the two different objects are interchangeable.
-                assert bookScrapeInfo.asin.equals(book.asin);
-
-                // Skip this book if `force`=`false` and the text has already been scraped to the ASIN folder.
-                if (!force) {
-                    final File bookFolder = new File(contentFolder, book.asin);
-                    if (bookFolder.exists() && bookFolder.isDirectory()) {
-                        final File textFile = new File(bookFolder, "text.txt");
-                        if (textFile.exists()) {
-//                            getLogger().log(Level.INFO, "Book `" + bookScrapeInfo.id + "`, asin=`" + book.asin + "` does not need to be updated and its text file exists. Continuing without processing.");
-                            continue;
-                        }
-                    }
-                }
-
-                // Skip this book if it is not available through Kindle Unlimited, is not free, and has been checked recently.
-                if (!book.isKindleUnlimited &&
-                        !isPriceFree(book.price) &&
-                        System.currentTimeMillis() - book.lastUpdated < CHECK_AMAZON_PRICE_DELAY_MILLIS) {
-//                    getLogger().log(Level.INFO, "Book `" + bookScrapeInfo.id + "`, asin=`" + book.asin + "` has not been free to purchase (" + book.price + ") recently. Continuing without processing.");
-                    continue;
-                }
+            if (!force && !shouldScrapeBook(bookScrapeInfo, contentFolder)) {
+                continue;
             }
 
             // Try updating, then scraping the text for this book.
@@ -175,6 +141,46 @@ public class AmazonKindle extends SiteScraper {
                 }
             }
         }
+    }
+
+    private boolean shouldScrapeBook(BookScrapeInfo bookScrapeInfo, File contentFolder) {
+        // Process this book when there is no known ASIN.
+        if (bookScrapeInfo.asin == null) {
+            return true;
+        }
+
+        // Fetch the Amazon book data.
+        // If an error occurs, try to fix it rather than leave a database row corrupted or non-existent.
+        final AmazonKindle.Book book;
+        try {
+            book = databaseHelper.getAmazonBook(bookScrapeInfo.asin);
+        } catch (SQLException e) {
+            getLogger().log(Level.SEVERE, "Encountered error while retrieving Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database.", e);
+            return true;
+        }
+        if (book == null) {
+            getLogger().log(Level.SEVERE, "Unable to retrieve Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database.");
+            return true;
+        }
+
+        // Assume that ASINs of the two different objects are interchangeable.
+        if (!bookScrapeInfo.asin.equals(book.asin)) {
+            return true;
+        }
+
+        // Skip this book if `force`=`false` and the text has already been scraped to the ASIN folder.
+        final File bookFolder = new File(contentFolder, bookScrapeInfo.asin);
+        if (bookFolder.exists() && bookFolder.isDirectory()) {
+            final File textFile = new File(bookFolder, "text.txt");
+            if (textFile.exists()) {
+                return false;
+            }
+        }
+
+        // Process this book if it is available through Kindle Unlimited, is free, or has not been checked recently.
+        return book.isKindleUnlimited ||
+                isPriceFree(book.price) ||
+                System.currentTimeMillis() - book.lastUpdated >= CHECK_AMAZON_PRICE_DELAY_MILLIS;
     }
 
     /**
