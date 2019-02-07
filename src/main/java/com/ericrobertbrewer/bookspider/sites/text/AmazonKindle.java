@@ -1026,6 +1026,7 @@ public class AmazonKindle extends SiteScraper {
                         }
                         return;
                     }
+                    // If not all children can be added, then this element - the parent - will be added.
                 } else {
                     for (WebElement child : children) {
                         addVisibleContent(driver, child, false);
@@ -1040,7 +1041,13 @@ public class AmazonKindle extends SiteScraper {
                 // Return the visible text of the <body> element.
                 final WebDriver frameDriver = driver.switchTo().frame(element);
                 final WebElement body = frameDriver.findElement(By.tagName("body"));
-                addVisibleContent(frameDriver, body, true);
+                // Extract each child of the body.
+                // Because the content of the body itself (id=`a:0`) is always changing, we never want it to be added.
+                // See `https://read.amazon.com/?asin=B009NGHNJI`.
+                final List<WebElement> bodyChildren = body.findElements(By.xpath("./*"));
+                for (WebElement bodyChild : bodyChildren) {
+                    addVisibleContent(frameDriver, bodyChild, true);
+                }
                 frameDriver.switchTo().parentFrame();
                 return;
             } else if ("img".equals(tag)) {
