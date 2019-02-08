@@ -155,11 +155,11 @@ public class AmazonKindle extends SiteScraper {
         try {
             book = databaseHelper.getAmazonBook(bookScrapeInfo.asin);
         } catch (SQLException e) {
-            getLogger().log(Level.SEVERE, "Encountered error while retrieving Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database.", e);
+            getLogger().log(Level.SEVERE, "Encountered error while retrieving Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database. Attempting to fix.", e);
             return true;
         }
         if (book == null) {
-            getLogger().log(Level.SEVERE, "Unable to retrieve Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database.");
+            getLogger().log(Level.SEVERE, "Unable to retrieve Amazon book `" + bookScrapeInfo.id + "`, asin=`" + bookScrapeInfo.asin + "` from database. Attempting to fix.");
             return true;
         }
 
@@ -275,16 +275,12 @@ public class AmazonKindle extends SiteScraper {
         String price = null;
         // TODO: Check if a book has already been borrowed through FreeTime Unlimited.
         switch (purchaseType) {
-            case PURCHASE_OWNED:
-                price = getBookPrice(dpContainerDiv, layoutType);
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` already purchased.");
+            case KINDLE_UNLIMITED_AVAILABLE:
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is available through Kindle Unlimited.");
+                isKindleUnlimited = true;
                 break;
             case KINDLE_UNLIMITED_BORROWED:
                 getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` already borrowed through Kindle Unlimited.");
-                isKindleUnlimited = true;
-                break;
-            case KINDLE_UNLIMITED_AVAILABLE:
-                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is available through Kindle Unlimited.");
                 isKindleUnlimited = true;
                 break;
             case FREETIME_UNLIMITED_AVAILABLE:
@@ -294,6 +290,10 @@ public class AmazonKindle extends SiteScraper {
             case PURCHASE_AVAILABLE:
                 price = getBookPrice(dpContainerDiv, layoutType);
                 getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` is available to purchase.");
+                break;
+            case PURCHASE_OWNED:
+                price = getBookPrice(dpContainerDiv, layoutType);
+                getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` already purchased.");
                 break;
             case UNAVAILABLE:
             default:
@@ -650,10 +650,26 @@ public class AmazonKindle extends SiteScraper {
     }
 
     private enum PurchaseType {
+        /**
+         * A subscription service for books.
+         */
         KINDLE_UNLIMITED_AVAILABLE,
+        /**
+         * The book has already been borrowed through Kindle Unlimited.
+         */
         KINDLE_UNLIMITED_BORROWED,
+        /**
+         * A subscription service for children's books.
+         * See `https://www.amazon.com/dp/B011H55MN6`.
+         */
         FREETIME_UNLIMITED_AVAILABLE,
+        /**
+         * The book is not available through any subscription service.
+         */
         PURCHASE_AVAILABLE,
+        /**
+         * The book has already been purchased.
+         */
         PURCHASE_OWNED,
         /**
          * The Kindle version of this book cannot be purchased.
@@ -764,28 +780,25 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
+    private WebElement findUpsellButton(WebElement dpContainerDiv, LayoutType layoutType) {
+        if (layoutType == LayoutType.COLUMNS) {
+            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
+            return buyboxDiv.findElement(By.id("upsell-button"));
+        }
+        return dpContainerDiv.findElement(By.id("upsell-button"));
+    }
+
     private boolean canBorrowBookThroughFreeTimeUnlimited(WebElement dpContainerDiv, LayoutType layoutType) {
         try {
-            if (layoutType == LayoutType.COLUMNS) {
-                final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
-                buyboxDiv.findElement(By.id("upsell-button"));
-            } else {
-                dpContainerDiv.findElement(By.id("upsell-button"));
-            }
-            return true;
+            final WebElement upsellButton = findUpsellButton(dpContainerDiv, layoutType);
+            return upsellButton.getText().trim().contains("FreeTime");
         } catch (NoSuchElementException ignored) {
         }
         return false;
     }
 
     private void borrowBookThroughFreeTimeUnlimited(WebDriver driver, WebElement dpContainerDiv, LayoutType layoutType) {
-        final WebElement upsellButton;
-        if (layoutType == LayoutType.COLUMNS) {
-            final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
-            upsellButton = buyboxDiv.findElement(By.id("upsell-button"));
-        } else {
-            upsellButton = dpContainerDiv.findElement(By.id("upsell-button"));
-        }
+        final WebElement upsellButton = findUpsellButton(dpContainerDiv, layoutType);
         upsellButton.click();
         ensureBorrowSucceeded(driver);
     }
