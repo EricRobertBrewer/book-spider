@@ -24,5 +24,6 @@
     </orderEntry>
     <orderEntry type="library" name="org.junit.jupiter:junit-jupiter-api:Release" level="project" />
     <orderEntry type="library" name="org.junit.jupiter:junit-jupiter-api:5.3.2" level="application" />
+    <orderEntry type="library" name="args4j:args4j:2.33" level="project" />
   </component>
 </module>

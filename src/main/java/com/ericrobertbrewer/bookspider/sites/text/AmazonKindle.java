@@ -7,6 +7,9 @@ import com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper;
 import com.ericrobertbrewer.web.WebUtils;
 import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
+import org.kohsuke.args4j.CmdLineException;
+import org.kohsuke.args4j.CmdLineParser;
+import org.kohsuke.args4j.Option;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
@@ -36,6 +39,41 @@ public class AmazonKindle extends SiteScraper {
         public long lastUpdated = -1L;
     }
 
+    public static class Options {
+
+        @Option(name="-email",
+                required=true,
+                usage="Amazon account email address",
+                aliases={"-e"})
+        String email;
+
+        @Option(name="-password",
+                required=true,
+                usage="Amazon account password",
+                aliases={"-p"})
+        String password;
+
+        @Option(name="-firstname",
+                required=true,
+                usage="Amazon account first name",
+                aliases={"-f"})
+        String firstName;
+
+        @Option(name="-threads",
+                usage="number of threads",
+                aliases={"-t"})
+        int threads = 1;
+
+        @Option(name="-retries",
+                usage="maximum number of retries to download a single book before skipping",
+                aliases={"-r"})
+        int maxRetries = 1;
+
+        @Option(name="-force",
+                usage="force content to be downloaded, even if it already exists")
+        boolean force = false;
+    }
+
     final List<BookScrapeInfo> bookScrapeInfos;
     private final DatabaseHelper databaseHelper;
     private final AtomicInteger scrapeThreadsRunning = new AtomicInteger(0);
@@ -55,30 +93,15 @@ public class AmazonKindle extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
-        if (args.length < 3 || args.length > 6) {
-            throw new IllegalArgumentException("Usage: <email> <password> <first-name> [threads=1] [max-retries=1] [force=false]");
-        }
-        // Collect arguments.
-        final String email = args[0];
-        final String password = args[1];
-        final String firstName = args[2];
-        final int threads;
-        if (args.length > 3) {
-            threads = Integer.parseInt(args[3]);
-        } else {
-            threads = 1;
-        }
-        final int maxRetries;
-        if (args.length > 4) {
-            maxRetries = Integer.parseInt(args[4]);
-        } else {
-            maxRetries = 1;
-        }
-        final boolean force;
-        if (args.length > 5) {
-            force = Boolean.parseBoolean(args[5]);
-        } else {
-            force = false;
+        // Collect options.
+        final Options options = new Options();
+        final CmdLineParser parser = new CmdLineParser(options);
+        try {
+            parser.parseArgument(args);
+        } catch (CmdLineException e) {
+            System.err.println(e.getMessage());
+            parser.printUsage(System.err);
+            return;
         }
 
         // Process the books in a random order.
@@ -88,7 +111,16 @@ public class AmazonKindle extends SiteScraper {
         final Queue<BookScrapeInfo> queue = new ConcurrentLinkedQueue<>(bookScrapeInfos);
 
         // Start scraping.
-        scrapeBooksThreaded(queue, threads, factory, contentFolder, email, password, firstName, maxRetries, force, callback);
+        scrapeBooksThreaded(queue,
+                options.threads,
+                factory,
+                contentFolder,
+                options.email,
+                options.password,
+                options.firstName,
+                options.maxRetries,
+                options.force,
+                callback);
     }
 
     private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue, int threads, WebDriverFactory factory, File contentFolder, String email, String password, String firstName, int maxRetries, boolean force, Launcher.Callback callback) {
