@@ -29,7 +29,7 @@ public class Launcher {
         final Formatter formatter = new SimpleFormatter();
         fileHandler.setFormatter(formatter);
         // Create content folder.
-        final File contentFolder = Folders.makeContentFolder(id);
+        final File contentFolder = Folders.getOrMakeContentFolder(id);
         // Create site scraper.
         final T siteScraper = provider.newInstance(logger);
         System.out.println("Starting scrape...");

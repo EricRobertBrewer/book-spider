@@ -35,7 +35,7 @@ public class Folders {
         return new File(getLogsFolder(id), LOG_DATE_FORMAT.format(new Date()) + ".log");
     }
 
-    public static File makeContentFolder(String id) throws IOException {
+    public static File getOrMakeContentFolder(String id) throws IOException {
         final String name = getContentFolderName(id);
         final File folder = new File(name);
         if (!folder.exists() && !folder.mkdirs()) {
