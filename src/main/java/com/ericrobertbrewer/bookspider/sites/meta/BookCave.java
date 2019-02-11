@@ -6,7 +6,6 @@ import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper;
 import com.ericrobertbrewer.bookspider.sites.text.AmazonKindle;
-import com.ericrobertbrewer.bookspider.sites.text.AmazonPreview;
 import com.ericrobertbrewer.web.WebUtils;
 import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
@@ -572,38 +571,6 @@ public class BookCave extends SiteScraper {
             bookScrapeInfos.add(new BookScrapeInfo(book.id, urls, book.asin));
         }
         return bookScrapeInfos;
-    }
-
-    public static class AmazonPreviewProvider implements Provider<AmazonPreview> {
-
-        public static void main(String[] args) throws IOException {
-            Launcher.launch(args, new AmazonPreviewProvider());
-        }
-
-        @Override
-        public AmazonPreview newInstance(Logger logger) {
-            final DatabaseHelper databaseHelper = new DatabaseHelper(logger);
-            databaseHelper.connectToContentsDatabase();
-            final List<Book> allBooks;
-            try {
-                allBooks = databaseHelper.getBookCaveBooks();
-            } catch (SQLException e) {
-                throw new RuntimeException("Unable to retrieve books.", e);
-            } finally {
-                databaseHelper.close();
-            }
-            final List<BookScrapeInfo> bookScrapeInfos = getBookScrapeInfos(allBooks);
-            return new AmazonPreview(logger, bookScrapeInfos);
-        }
-
-        @Override
-        public String getId() {
-            return Folders.ID_BOOKCAVE_AMAZON_PREVIEW;
-        }
-
-        @Override
-        public void onComplete(AmazonPreview instance) {
-        }
     }
 
     public static class AmazonKindleProvider implements Provider<AmazonKindle>, AmazonKindle.Listener {

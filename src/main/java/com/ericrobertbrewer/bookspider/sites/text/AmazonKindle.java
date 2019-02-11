@@ -5,6 +5,8 @@ import com.ericrobertbrewer.bookspider.sites.BookScrapeInfo;
 import com.ericrobertbrewer.bookspider.sites.SiteScraper;
 import com.ericrobertbrewer.bookspider.sites.db.DatabaseHelper;
 import com.ericrobertbrewer.web.WebUtils;
+import com.ericrobertbrewer.web.dl.FileDownloadInfo;
+import com.ericrobertbrewer.web.dl.FileDownloader;
 import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
 import org.kohsuke.args4j.CmdLineException;
@@ -23,6 +25,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 public class AmazonKindle extends SiteScraper {
 
@@ -41,42 +44,51 @@ public class AmazonKindle extends SiteScraper {
 
     public static class Options {
 
-        @Option(name="-email",
-                required=true,
-                usage="Amazon account email address",
-                aliases={"-e"})
+        @Option(name = "-mode",
+                required = true,
+                usage = "Type(s) of content to download. Can be 'preview' (default), 'kindle', or 'both'",
+                aliases = {"-m"})
+        String mode;
+
+        @Option(name = "-email",
+                usage = "Amazon account email address",
+                aliases = {"-e"})
         String email;
 
-        @Option(name="-password",
-                required=true,
-                usage="Amazon account password",
-                aliases={"-p"})
+        @Option(name = "-password",
+                usage = "Amazon account password",
+                aliases = {"-p"})
         String password;
 
-        @Option(name="-firstname",
-                required=true,
-                usage="Amazon account first name",
-                aliases={"-f"})
+        @Option(name = "-firstname",
+                usage = "Amazon account first name",
+                aliases = {"-f"})
         String firstName;
 
-        @Option(name="-threads",
-                usage="number of threads",
-                aliases={"-t"})
+        @Option(name = "-threads",
+                usage = "Number of threads",
+                aliases = {"-t"})
         int threads = 1;
 
-        @Option(name="-retries",
-                usage="maximum number of retries to download a single book before skipping",
-                aliases={"-r"})
+        @Option(name = "-retries",
+                usage = "Maximum number of retries to download a single book before skipping",
+                aliases = {"-r"})
         int maxRetries = 1;
 
-        @Option(name="-force",
-                usage="force content to be downloaded, even if it already exists")
+        @Option(name = "-force",
+                usage = "Force content to be downloaded, even if it already exists")
         boolean force = false;
     }
+
+    private static final String MODE_PREVIEW = "preview";
+    private static final String MODE_KINDLE = "kindle";
+    private static final String MODE_BOTH = "both";
 
     final List<BookScrapeInfo> bookScrapeInfos;
     private final DatabaseHelper databaseHelper;
     private final AtomicInteger scrapeThreadsRunning = new AtomicInteger(0);
+    private Dimension defaultDimension = null;
+    private Dimension singleColumnDimension = new Dimension(719, 978);
 
     private Listener listener;
 
@@ -93,7 +105,7 @@ public class AmazonKindle extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, String[] args, Launcher.Callback callback) {
-        // Collect options.
+        // Collect arguments and options.
         final Options options = new Options();
         final CmdLineParser parser = new CmdLineParser(options);
         try {
@@ -102,6 +114,20 @@ public class AmazonKindle extends SiteScraper {
             System.err.println(e.getMessage());
             parser.printUsage(System.err);
             return;
+        }
+
+        // Check for a valid mode option.
+        if (!MODE_PREVIEW.equalsIgnoreCase(options.mode) &&
+                !MODE_KINDLE.equalsIgnoreCase(options.mode) &&
+                !MODE_BOTH.equalsIgnoreCase(options.mode)) {
+            throw new IllegalArgumentException("Unrecognized argument for `mode`: " + options.mode + ".");
+        }
+
+        // Check for valid login credentials if scraping Kindle content.
+        if (!MODE_PREVIEW.equalsIgnoreCase(options.mode)) {
+            if (options.email == null || options.password == null || options.firstName == null) {
+                throw new IllegalArgumentException("The options 'email', 'password', and 'firstname' are required when collecting Kindle content.");
+            }
         }
 
         // Process the books in a random order.
@@ -114,6 +140,7 @@ public class AmazonKindle extends SiteScraper {
         scrapeBooksThreaded(queue,
                 options.threads,
                 factory,
+                options.mode,
                 contentFolder,
                 options.email,
                 options.password,
@@ -123,40 +150,72 @@ public class AmazonKindle extends SiteScraper {
                 callback);
     }
 
-    private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue, int threads, WebDriverFactory factory, File contentFolder, String email, String password, String firstName, int maxRetries, boolean force, Launcher.Callback callback) {
+    private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue,
+                                     int threads,
+                                     WebDriverFactory factory,
+                                     String mode,
+                                     File contentFolder,
+                                     String email,
+                                     String password,
+                                     String firstName,
+                                     int maxRetries,
+                                     boolean force,
+                                     Launcher.Callback callback) {
+        // Create images queue.
+        final Queue<FileDownloadInfo> imagesQueue = new ConcurrentLinkedQueue<>();
+
+        // Start scrape threads.
         for (int i = 0; i < threads; i++) {
+            final WebDriver driver = factory.newInstance();
+            if (defaultDimension == null) {
+                defaultDimension = driver.manage().window().getSize();
+            }
             final Thread scrapeThread = new Thread(() -> {
-                final WebDriver driver = factory.newInstance();
                 scrapeThreadsRunning.incrementAndGet();
-                setIsWindowSingleColumn(driver);
                 // Start scraping.
-                scrapeBooks(queue, driver, contentFolder, email, password, firstName, maxRetries, force);
+                scrapeBooks(queue, driver, mode, contentFolder, imagesQueue, email, password, firstName, maxRetries, force);
                 driver.quit();
                 // Finish.
                 if (scrapeThreadsRunning.decrementAndGet() == 0) {
                     databaseHelper.close();
-                    callback.onComplete();
                 }
             });
             scrapeThread.start();
         }
+
+        // Start the image download thread.
+        if (MODE_PREVIEW.equalsIgnoreCase(mode) || MODE_BOTH.equalsIgnoreCase(mode)) {
+            // Wait until all of the scrape threads have started.
+            while (scrapeThreadsRunning.get() < threads) {
+                DriverUtils.sleep(3000L);
+            }
+
+            getLogger().log(Level.INFO, "Downloading images...");
+            final FileDownloader fileDownloader = new FileDownloader(getLogger());
+            fileDownloader.downloadFilesThreaded(imagesQueue, force, new FileDownloader.Callback() {
+                @Override
+                public boolean doStayAlive() {
+                    return scrapeThreadsRunning.get() > 0;
+                }
+
+                @Override
+                public void onComplete() {
+                    getLogger().log(Level.INFO, "Finished downloading images.");
+                    if (!doStayAlive()) {
+                        callback.onComplete();
+                    }
+                }
+            });
+        }
     }
 
-    /**
-     * Ensure that only one column is shown in the Kindle reader.
-     * @param driver        The web driver.
-     */
-    void setIsWindowSingleColumn(WebDriver driver) {
-        driver.manage().window().setSize(new Dimension(719, 978));
-    }
-
-    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, File contentFolder, String email, String password, String firstName, int maxRetries, boolean force) {
+    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, int maxRetries, boolean force) {
         while (!queue.isEmpty()) {
             // Pull the next book off of the queue.
             final BookScrapeInfo bookScrapeInfo = queue.poll();
 
             // Check if this book can be skipped.
-            if (!force && !shouldScrapeBook(bookScrapeInfo, contentFolder)) {
+            if (!force && !shouldScrapeBook(bookScrapeInfo, mode, contentFolder)) {
                 continue;
             }
 
@@ -164,7 +223,7 @@ public class AmazonKindle extends SiteScraper {
             for (String url : bookScrapeInfo.urls) {
                 try {
                     getLogger().log(Level.INFO, "Processing book `" + bookScrapeInfo.id + "` using URL `" + url + "`.");
-                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, contentFolder, email, password, firstName, maxRetries, force);
+                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, mode, contentFolder, imagesQueue, email, password, firstName, maxRetries, force);
                     break;
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
@@ -175,7 +234,7 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private boolean shouldScrapeBook(BookScrapeInfo bookScrapeInfo, File contentFolder) {
+    private boolean shouldScrapeBook(BookScrapeInfo bookScrapeInfo, String mode, File contentFolder) {
         // Process this book when there is no known ASIN.
         if (bookScrapeInfo.asin == null) {
             return true;
@@ -203,9 +262,20 @@ public class AmazonKindle extends SiteScraper {
         // Skip this book if `force`=`false` and the text has already been scraped to the ASIN folder.
         final File bookFolder = new File(contentFolder, bookScrapeInfo.asin);
         if (bookFolder.exists() && bookFolder.isDirectory()) {
+            final File previewFile = new File(bookFolder, "preview.txt");
             final File textFile = new File(bookFolder, "text.txt");
-            if (textFile.exists()) {
-                return false;
+            if (MODE_PREVIEW.equalsIgnoreCase(mode)) {
+                if (previewFile.exists()) {
+                    return false;
+                }
+            } else if (MODE_KINDLE.equalsIgnoreCase(mode)) {
+                if (textFile.exists()) {
+                    return false;
+                }
+            } else {
+                if (previewFile.exists() && textFile.exists()) {
+                    return false;
+                }
             }
         }
 
@@ -232,7 +302,7 @@ public class AmazonKindle extends SiteScraper {
         return price.startsWith(PRICE_FREE);
     }
 
-    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, File contentFolder, String email, String password, String firstName, int maxRetries, boolean force) throws IOException {
+    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, int maxRetries, boolean force) throws IOException {
         // Navigate to the Amazon store page.
         driver.navigate().to(url);
         DriverUtils.sleep(1500L);
@@ -247,10 +317,11 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Sign in, if needed.
-        if (!isSignedIn(driver, firstName)) {
+        if ((MODE_KINDLE.equalsIgnoreCase(mode) || MODE_BOTH.equals(mode)) &&
+                !isSignedIn(driver, firstName)) {
             navigateToSignInPage(driver);
             signIn(driver, email, password);
-            scrapeBook(driver, url, bookId, oldAsin, contentFolder, email, password, firstName, maxRetries, force);
+            scrapeBook(driver, url, bookId, oldAsin, mode, contentFolder, imagesQueue, email, password, firstName, maxRetries, force);
             return;
         }
 
@@ -390,6 +461,16 @@ public class AmazonKindle extends SiteScraper {
             return;
         }
 
+        // Collect this book's 'Look Inside' preview, if applicable.
+        if (MODE_PREVIEW.equalsIgnoreCase(mode) || MODE_BOTH.equalsIgnoreCase(mode)) {
+            scrapeBookPreview(driver, bookId, asin, bookFolder, imagesQueue, aPageDiv, dpContainerDiv, force);
+        }
+
+        // Finish if we're only scraping book previews.
+        if (MODE_PREVIEW.equalsIgnoreCase(mode)) {
+            return;
+        }
+
         // Skip collecting the content for this book if `force`=`false` and the text file exists.
         final File textFile = new File(bookFolder, "text.txt");
         if (textFile.exists()) {
@@ -445,9 +526,11 @@ public class AmazonKindle extends SiteScraper {
 
         // Start collecting content.
         getLogger().log(Level.INFO, "Starting to collect content for book `" + bookId + "`, asin=`" + asin + "`...");
+        // Prepare to collect content in this window by shrinking the window width.
+        setIsWindowSingleColumn(driver, true);
         try {
             // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
-            final Content content = getContent(driver, bookId, asin, email, password, maxRetries);
+            final KindleContent content = getKindleContent(driver, bookId, asin, email, password, maxRetries);
             // Check whether any content has been extracted.
             if (!content.isEmpty()) {
                 // Persist content once it has been totally collected.
@@ -460,6 +543,8 @@ public class AmazonKindle extends SiteScraper {
                 getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "`, asin=`" + asin + "` after " + maxRetries + " retries. Quitting.");
             }
         } finally {
+            // Return the window to a larger width to avoid non-visible elements while processing the store page.
+            setIsWindowSingleColumn(driver, false);
             // Return this book to avoid reaching the 10-book limit for Kindle Unlimited.
             // Hitting the limit prevents any other books from being borrowed through KU.
             if (isKindleUnlimited) {
@@ -476,10 +561,11 @@ public class AmazonKindle extends SiteScraper {
 
     /**
      * Check whether we have signed in to Amazon.
-     * @param driver        The web driver.
-     * @param firstName     The first name of the Amazon account holder.
-     *                      This is used to see if the sign-in element contains the text, "Hello, [first-name]".
-     * @return              `true` if the user is signed in. Otherwise, `false`.
+     *
+     * @param driver    The web driver.
+     * @param firstName The first name of the Amazon account holder.
+     *                  This is used to see if the sign-in element contains the text, "Hello, [first-name]".
+     * @return `true` if the user is signed in. Otherwise, `false`.
      */
     private boolean isSignedIn(WebDriver driver, String firstName) {
         final WebElement navbarDiv = driver.findElement(By.id("navbar"));
@@ -491,7 +577,8 @@ public class AmazonKindle extends SiteScraper {
 
     /**
      * Only works when called from Amazon store page.
-     * @param driver        The web driver.
+     *
+     * @param driver The web driver.
      */
     private void navigateToSignInPage(WebDriver driver) {
         while (!driver.getCurrentUrl().startsWith(SIGN_IN_URL_START)) {
@@ -505,9 +592,10 @@ public class AmazonKindle extends SiteScraper {
     /**
      * Sign in to Amazon.
      * Works only if you have already navigated to the sign-in page (`https://www.amazon.com/ap/signin?...`).
-     * @param driver        The web driver.
-     * @param email         Email.
-     * @param password      Password.
+     *
+     * @param driver   The web driver.
+     * @param email    Email.
+     * @param password Password.
      */
     private void signIn(WebDriver driver, String email, String password) {
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
@@ -583,8 +671,9 @@ public class AmazonKindle extends SiteScraper {
      * For example, `https://mybookcave.com/t/?u=0&b=94037&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website`.
      * This may cause the driver to navigate to a different page.
      * To avoid `StaleElementReferenceException`s, invoke this method before finding elements via the web driver.
-     * @param driver        The web driver.
-     * @param layoutType    The layout type of the Amazon store page.
+     *
+     * @param driver     The web driver.
+     * @param layoutType The layout type of the Amazon store page.
      * @return `true` if the driver was already on, or has been directed to the Kindle store page. Otherwise, `false`.
      */
     private boolean navigateToKindleStorePageIfNeeded(WebDriver driver, LayoutType layoutType) {
@@ -667,8 +756,9 @@ public class AmazonKindle extends SiteScraper {
      * For example: `B07JK9Z14K`.
      * Used as: `https://read.amazon.com/?asin=<AMAZON_ID>`.
      * This method should only be called from the Amazon store page.
-     * @param driver    The web driver.
-     * @return          The ASIN
+     *
+     * @param driver The web driver.
+     * @return The ASIN
      */
     private String getAsin(WebDriver driver) {
         final String url = driver.getCurrentUrl();
@@ -869,8 +959,317 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private Content getContent(WebDriver driver, String bookId, String asin, String email, String password, int maxRetries) {
-        final Content content = new Content();
+    private void scrapeBookPreview(WebDriver driver, String bookId, String asin, File bookFolder, Queue<FileDownloadInfo> imagesQueue, WebElement aPageDiv, WebElement dpContainerDiv, boolean force) {
+        // Check if the file already exists.
+        final File previewFile = new File(bookFolder, "preview.txt");
+        if (previewFile.exists()) {
+            if (force) {
+                if (!previewFile.delete()) {
+                    getLogger().log(Level.SEVERE, "Unable to delete preview file for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
+                    return;
+                }
+                getLogger().log(Level.INFO, "Deleted preview file for book `" + bookId + "`, asin=`" + asin + "`. Continuing.");
+            } else {
+                getLogger().log(Level.INFO, "Preview for book `" + bookId + "`, asin=`" + asin + "` has already been extracted. Skipping.");
+                return;
+            }
+        }
+
+        // Allow elements to load.
+        DriverUtils.sleep(2000L);
+
+        // Find the 'Look Inside' image.
+        final WebElement lookInsideLogoImg = findLookInsideLogoImg(dpContainerDiv);
+        if (lookInsideLogoImg == null) {
+            // This book does not have a 'Look Inside' element.
+            // Therefore, there is no preview for this book.
+            getLogger().log(Level.INFO, "Unable to find 'Look Inside' element for book `" + bookId + "`. Skipping.");
+            return;
+        }
+
+        // Click the 'Look Inside' image.
+        try {
+            lookInsideLogoImg.click();
+        } catch (WebDriverException e) {
+            try {
+                // The 'Look Inside' (background) image is not clickable.
+                // Since it at least exists, try to click the cover image to open the preview window.
+                // See `https://www.amazon.com/dp/1523813342`.
+                final WebElement ebooksImageBlockDiv = dpContainerDiv.findElement(By.id("ebooksImageBlock"));
+                ebooksImageBlockDiv.click();
+            } catch (NoSuchElementException ignored) {
+                final WebElement imgBlockFrontImg = dpContainerDiv.findElement(By.id("imgBlockFront"));
+                imgBlockFrontImg.click();
+            }
+        }
+        DriverUtils.sleep(1500L);
+
+        // Work in the newly opened preview pane on the same page.
+        final WebElement readerPlaceholderDiv = aPageDiv.findElement(By.id("sitbReaderPlaceholder"));
+        final WebElement lightboxDiv;
+        try {
+            lightboxDiv = readerPlaceholderDiv.findElement(By.id("sitbLightbox"));
+        } catch (NoSuchElementException e) {
+            // "Feature Unavailable"
+            // "We're sorry, but this feature is currently unavailable. Please try again later."
+            // See `https://www.amazon.com/dp/B01MYH403A`.
+            getLogger().log(Level.WARNING, "Kindle sample feature may be unavailable for book `" + bookId + "`, asin=`" + asin + "`. Retrying.");
+            return;
+        }
+
+        // Prefer the 'Kindle Book' view, but accept the 'Print Book' view.
+        final WebElement headerDiv = lightboxDiv.findElement(By.id("sitbLBHeader"));
+        final WebElement readerModeDiv = headerDiv.findElement(By.id("sitbReaderMode"));
+        try {
+            final WebElement readerModeTabKindleDiv = readerModeDiv.findElement(By.id("readerModeTabKindle"));
+            try {
+                readerModeTabKindleDiv.click();
+                DriverUtils.sleep(500L);
+            } catch (ElementNotVisibleException e) {
+                // The 'Kindle Book' `div` may not be clickable.
+                getLogger().log(Level.INFO, "Unable to click 'Kindle Book' tab element for book `" + bookId + "`, asin=`" + asin + "`. Continuing.");
+            }
+        } catch (NoSuchElementException e) {
+            getLogger().log(Level.INFO, "Page for book `" + bookId + "`, asin=`" + asin + "` does not contain 'Kindle Book' reader mode.");
+        }
+
+        // Zoom out. This may prevent having to scroll the page a lot further.
+        final WebElement readerZoomToolbarDiv = headerDiv.findElement(By.id("sitbReaderZoomToolbar"));
+        final WebElement readerTitlebarZoomOutButton = readerZoomToolbarDiv.findElement(By.id("sitbReaderTitlebarZoomOut"));
+        try {
+            readerTitlebarZoomOutButton.click();
+        } catch (ElementNotVisibleException e) {
+            DriverUtils.sleep(2000L);
+            try {
+                readerTitlebarZoomOutButton.click();
+            } catch (ElementNotVisibleException ignored) {
+            }
+        }
+        DriverUtils.sleep(1500L);
+
+        // Find the preview reader element.
+        final WebElement readerMiddleDiv = lightboxDiv.findElement(By.id("sitbReaderMiddle"));
+        final WebElement readerPageareaDiv = readerMiddleDiv.findElement(By.id("sitbReader-pagearea"));
+        final WebElement readerPageContainerDiv = readerPageareaDiv.findElement(By.id("sitbReaderPageContainer"));
+        final WebElement readerPageScrollDiv = readerPageContainerDiv.findElement(By.id("sitbReaderPageScroll"));
+        final WebElement readerKindleSampleDiv;
+        try {
+            readerKindleSampleDiv = readerPageScrollDiv.findElement(By.id("sitbReaderKindleSample"));
+        } catch (NoSuchElementException e) {
+            // This book does not have a Kindle sample.
+            // Though it has a print sample, it is an `img` which loads lazily, which would require both
+            // scrolling the page while waiting for loads and an image-to-text engine.
+            // TODO: Do this.
+            getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` does not have a Kindle sample. Skipping.");
+            return;
+        }
+
+        // Start collecting content.
+        getLogger().log(Level.INFO, "Starting to collect preview for book `" + bookId + "`, asin=`" + asin + "`...");
+        final WebElement rootElement = findRootPreviewElement(readerKindleSampleDiv);
+        try {
+            final PreviewContent content = new PreviewContent(this);
+            content.collect(driver, rootElement, bookFolder);
+            content.writePreview(previewFile);
+            getLogger().log(Level.INFO, "Successfully wrote preview for book `" + bookId + "`, asin=`" + asin + "`.");
+            content.downloadImages(imagesQueue);
+        } catch (IOException e) {
+            getLogger().log(Level.SEVERE, "Encountered error when writing preview ");
+        } finally {
+            final WebElement readerCloseButtonDiv = headerDiv.findElement(By.id("sitbReaderCloseButton"));
+            readerCloseButtonDiv.click();
+        }
+    }
+
+    private WebElement findLookInsideLogoImg(WebElement dpContainerDiv) {
+        try {
+            return dpContainerDiv.findElement(By.id("ebooksSitbLogoImg"));
+        } catch (NoSuchElementException e) {
+            // This page may be a slightly different format than most.
+            // See `https://www.amazon.com/dp/B01I39Y1UY`.
+            try {
+                return dpContainerDiv.findElement(By.id("sitbLogoImg"));
+            } catch (NoSuchElementException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private WebElement findRootPreviewElement(WebElement sitbReaderKindleSampleDiv) {
+        try {
+            return sitbReaderKindleSampleDiv.findElement(By.id("sitbReaderFrame"));
+        } catch (NoSuchElementException ignored) {
+            // This page does not have an `iframe` element.
+            // That is OK. The book contents are simply embedded in the same page.
+        }
+        return sitbReaderKindleSampleDiv;
+    }
+
+    private static class PreviewContent {
+
+        private final AmazonKindle kindle;
+        private final List<String> lines = new ArrayList<>();
+        private final List<FileDownloadInfo> fileDownloadInfos = new ArrayList<>();
+
+        private PreviewContent(AmazonKindle kindle) {
+            this.kindle = kindle;
+        }
+
+        private Logger getLogger() {
+            return kindle.getLogger();
+        }
+
+        private void collect(WebDriver driver, WebElement element, File bookFolder) {
+            // Search recursively for matching children.
+            final List<WebElement> children = element.findElements(By.xpath("./*"));
+            if (children.size() > 0 && !areAllFormatting(children)) {
+                for (WebElement child : children) {
+                    collect(driver, child, bookFolder);
+                }
+                return;
+            }
+
+            // This element is considered relevant. Write its contents.
+            final String tag = element.getTagName();
+
+            // Handle certain tags specially.
+            if ("style".equals(tag)) {
+                // Ignore.
+                return;
+            } else if ("iframe".equals(tag)) {
+                final WebDriver frameDriver = driver.switchTo().frame(element);
+                final WebElement frameBody = frameDriver.findElement(By.tagName("body"));
+                collect(frameDriver, frameBody, bookFolder);
+                frameDriver.switchTo().parentFrame();
+                return;
+            }
+
+            // Extract the raw inner HTML.
+            final String html = element.getAttribute("innerHTML");
+
+            // Check for and download any images within image (`img`) tags.
+            final String[] imageUrls = getImageUrls(html);
+            for (String url : imageUrls) {
+                fileDownloadInfos.add(new FileDownloadInfo(url, bookFolder));
+            }
+
+            // On every relevant LEAF-ELEMENT, check for a `background-image` CSS attribute.
+            final String backgroundImageValue = element.getCssValue("background-image");
+            if (backgroundImageValue != null && !backgroundImageValue.isEmpty() && !"none".equals(backgroundImageValue)) {
+                final String url;
+                if (backgroundImageValue.startsWith("url(\"") && backgroundImageValue.endsWith("\")")) {
+                    url = backgroundImageValue.substring(5, backgroundImageValue.length() - 2).trim();
+                } else {
+                    url = backgroundImageValue.trim();
+                }
+                fileDownloadInfos.add(new FileDownloadInfo(url, bookFolder));
+            }
+
+            // Convert HTML to human-readable text.
+            final String text = html
+                    // Extract `img` `alt` text.
+                    // An image is used frequently as a "drop cap" (https://graphicdesign.stackexchange.com/questions/85715/first-letter-of-a-book-or-chapter).
+                    // See `https://www.amazon.com/dp/B078WY9W7K`.
+                    .replaceAll("<img[^>]*? alt=\"([^\"]+)\"[^>]*?>", "$1")
+                    // Break lines.
+                    // Though the `br` tag is considered a "formatting" tag, this can prevent unwanted
+                    // concatenation of texts that are really on separate lines.
+                    .replaceAll("<br.*?>", "\n")
+                    // Ignore other HTML formatting tags, e.g. links, italics.
+                    .replaceAll("<([-a-zA-Z0-9]+).*?>(.*?)</\\1>", "$2")
+                    // Ignore self-closing tags.
+                    .replaceAll("<[^>]+?/?>", "")
+                    // Decode the most common HTML character entity references.
+                    .replaceAll("&nbsp;", " ")
+                    .replaceAll("&amp;", "&")
+                    .replaceAll("&quot;", "\"")
+                    .replaceAll("&lt;", "<")
+                    .replaceAll("&gt;", ">")
+                    .trim();
+            if (text.isEmpty()) {
+                return;
+            }
+            lines.add(text);
+        }
+
+        private void writePreview(File previewFile) throws IOException {
+            final PrintStream out = new PrintStream(previewFile);
+            for (String line : lines) {
+                out.println(line);
+            }
+            out.close();
+        }
+
+        private void downloadImages(Queue<FileDownloadInfo> imagesQueue) {
+            for (FileDownloadInfo fileDownloadInfo : fileDownloadInfos) {
+                imagesQueue.offer(fileDownloadInfo);
+            }
+        }
+
+        /**
+         * A set of HTML tag names which are NOT to be considered "containers" of relevant text,
+         * where a "container" would typically be `div`, `p`, `h1`, etc. elements.
+         * Used as a blacklisting method when capturing text.
+         */
+        private static final Set<String> FORMATTING_TAGS = new HashSet<>();
+
+        static {
+            FORMATTING_TAGS.add("em");
+            FORMATTING_TAGS.add("i");
+            FORMATTING_TAGS.add("strong");
+            FORMATTING_TAGS.add("b");
+            FORMATTING_TAGS.add("u");
+            FORMATTING_TAGS.add("tt");
+            FORMATTING_TAGS.add("strike");
+            FORMATTING_TAGS.add("s");
+            FORMATTING_TAGS.add("big");
+            FORMATTING_TAGS.add("small");
+            FORMATTING_TAGS.add("mark");
+            FORMATTING_TAGS.add("del");
+            FORMATTING_TAGS.add("ins");
+            FORMATTING_TAGS.add("sub");
+            FORMATTING_TAGS.add("sup");
+            FORMATTING_TAGS.add("br");
+            // For our purposes, `span`s should probably be ignored.
+            // Text in descriptions seems to only be contained in `p`s and `div`s.
+            FORMATTING_TAGS.add("span");
+            FORMATTING_TAGS.add("style");
+            FORMATTING_TAGS.add("img");  // Allows capturing of Drop Caps.
+            FORMATTING_TAGS.add("hr");
+            FORMATTING_TAGS.add("a");
+            FORMATTING_TAGS.add("font");
+        }
+
+        private static boolean areAllFormatting(List<WebElement> elements) {
+            for (WebElement element : elements) {
+                final String tag = element.getTagName();
+                if (!FORMATTING_TAGS.contains(tag)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static String[] getImageUrls(String html) {
+            // See `https://stackoverflow.com/questions/6020384/create-array-of-regex-matches`.
+            return Pattern.compile("<img[^>]*? src=\"([^\"]+)\"[^>]*?>")
+                    .matcher(html)
+                    .results()
+                    .map(matchResult -> matchResult.group(1))
+                    .toArray(String[]::new);
+        }
+    }
+
+    /**
+     * Ensure that only one column is shown in the Kindle reader.
+     * @param driver        The web driver.
+     */
+    private void setIsWindowSingleColumn(WebDriver driver, boolean isSingleColumn) {
+        driver.manage().window().setSize(isSingleColumn ? singleColumnDimension : defaultDimension);
+    }
+
+    private KindleContent getKindleContent(WebDriver driver, String bookId, String asin, String email, String password, int maxRetries) {
+        final KindleContent content = new KindleContent(this);
         // Catch exceptions the first few times...
         int retries = maxRetries;
         final long baseWaitMillis = 10000L;
@@ -937,10 +1336,19 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private class Content {
+    private static class KindleContent {
 
+        private final AmazonKindle kindle;
         private final Map<String, String> idToText = new HashMap<>();
         private final Map<String, String> imgUrlToSrc = new HashMap<>();
+
+        private KindleContent(AmazonKindle kindle) {
+            this.kindle = kindle;
+        }
+
+        private Logger getLogger() {
+            return kindle.getLogger();
+        }
 
         @SuppressWarnings("BooleanMethodIsAlwaysInverted")
         boolean isEmpty() {
@@ -1046,7 +1454,7 @@ public class AmazonKindle extends SiteScraper {
                     final String url = driver.getCurrentUrl();
                     if (url.startsWith(SIGN_IN_URL_START)) {
                         // If so, sign in again and continue collecting content from the same position in the reader.
-                        signIn(driver, email, password);
+                        kindle.signIn(driver, email, password);
                         collect(driver, bookId, asin, email, password, false, waitMillis);
                     }
                     return;
@@ -1074,12 +1482,18 @@ public class AmazonKindle extends SiteScraper {
                 return;
             }
 
+            // Currently, the entire DOM tree is traversed after every page turn. This is slow, but accurate.
+            // We can't make any guarantees about the structure of the DOM for any given book.
+            // Specifically:
+            // 1 - We can't assume that once we've seen an element without text that its text won't be filled in later.
+            //     See `https://read.amazon.com/?asin=B01A5C7DC0`.
+            // 2 - We can't assume that elements are always loaded in ID order.
             // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
             // Return the visible text of all relevant children, if any exist.
             final List<WebElement> children = element.findElements(By.xpath("./*"));
             if (children.size() > 0) {
                 if (isBelowIframe) {
-                    if (children.stream().allMatch(this::canAddChildElementContent)) {
+                    if (children.stream().allMatch(KindleContent::canAddChildElementContent)) {
                         for (WebElement child : children) {
                             addVisibleContent(driver, child, true);
                         }
@@ -1167,11 +1581,11 @@ public class AmazonKindle extends SiteScraper {
             getLogger().log(Level.SEVERE, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
         }
 
-        private boolean isStandardId(String id) {
+        private static boolean isStandardId(String id) {
             return id != null && id.contains(":");
         }
 
-        private boolean canAddChildElementContent(WebElement child) {
+        private static boolean canAddChildElementContent(WebElement child) {
             final String id = child.getAttribute("id");
             if (isStandardId(id)) {
                 return true;
@@ -1191,7 +1605,7 @@ public class AmazonKindle extends SiteScraper {
             return false;
         }
 
-        private String getImageUrlFromSrc(String src) {
+        private static String getImageUrlFromSrc(String src) {
             return src.substring(Math.max(0, src.length() - 18), Math.max(0, src.length() - 12))
                     .replaceAll("/+", "")
                     .trim();
@@ -1275,43 +1689,43 @@ public class AmazonKindle extends SiteScraper {
                 out.write(outBytes);
             }
         }
-    }
 
-    private static final Map<Character, Integer> ID_CHAR_ORDINALITY = new HashMap<>();
+        private static final Map<Character, Integer> ID_CHAR_ORDINALITY = new HashMap<>();
 
-    static {
-        final String chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
-        for (int i = 0; i < chars.length(); i++) {
-            ID_CHAR_ORDINALITY.put(chars.charAt(i), i);
-        }
-    }
-
-    static final Comparator<String> TEXT_ID_COMPARATOR = (a, b) -> {
-        // For example: `a:X` < `a:p7` < `a:j9`.
-        final int aColon = a.indexOf(':');
-        final int bColon = b.indexOf(':');
-        // Check substrings before the colon.
-        final String aBefore = a.substring(0, aColon);
-        final String bBefore = b.substring(0, bColon);
-        if (!aBefore.equals(bBefore)) {
-            return aBefore.compareTo(bBefore);
-        }
-        // Compare substrings after the colon.
-        final String aAfter = a.substring(aColon + 1);
-        final String bAfter = b.substring(bColon + 1);
-        // Shorter substrings have precedence.
-        if (aAfter.length() != bAfter.length()) {
-            return aAfter.length() - bAfter.length();
-        }
-        // Characters are significant from right to left.
-        for (int i = 0; i < aAfter.length(); i++) {
-            final char aChar = aAfter.charAt(aAfter.length() - 1 - i);
-            final char bChar = bAfter.charAt(bAfter.length() - 1 - i);
-            if (aChar != bChar) {
-                return ID_CHAR_ORDINALITY.get(aChar) - ID_CHAR_ORDINALITY.get(bChar);
+        static {
+            final String chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+            for (int i = 0; i < chars.length(); i++) {
+                ID_CHAR_ORDINALITY.put(chars.charAt(i), i);
             }
         }
-        // Strings are equal.
-        return 0;
-    };
+
+        static final Comparator<String> TEXT_ID_COMPARATOR = (a, b) -> {
+            // For example: `a:X` < `a:p7` < `a:j9`.
+            final int aColon = a.indexOf(':');
+            final int bColon = b.indexOf(':');
+            // Check substrings before the colon.
+            final String aBefore = a.substring(0, aColon);
+            final String bBefore = b.substring(0, bColon);
+            if (!aBefore.equals(bBefore)) {
+                return aBefore.compareTo(bBefore);
+            }
+            // Compare substrings after the colon.
+            final String aAfter = a.substring(aColon + 1);
+            final String bAfter = b.substring(bColon + 1);
+            // Shorter substrings have precedence.
+            if (aAfter.length() != bAfter.length()) {
+                return aAfter.length() - bAfter.length();
+            }
+            // Characters are significant from right to left.
+            for (int i = 0; i < aAfter.length(); i++) {
+                final char aChar = aAfter.charAt(aAfter.length() - 1 - i);
+                final char bChar = bAfter.charAt(bAfter.length() - 1 - i);
+                if (aChar != bChar) {
+                    return ID_CHAR_ORDINALITY.get(aChar) - ID_CHAR_ORDINALITY.get(bChar);
+                }
+            }
+            // Strings are equal.
+            return 0;
+        };
+    }
 }

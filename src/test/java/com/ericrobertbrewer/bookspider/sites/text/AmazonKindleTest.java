@@ -7,6 +7,7 @@ import com.ericrobertbrewer.bookspider.sites.SiteScraperTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.openqa.selenium.Dimension;
 import org.openqa.selenium.WebDriver;
 
 import java.io.IOException;
@@ -56,12 +57,11 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
     public void setUp() throws IOException {
         super.setUp();
         driver = getFactory().newInstance();
-        getScraper().setIsWindowSingleColumn(driver);
     }
 
     @Test
     void scrapeTest() {
-        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, getContentFolder(), EMAIL, PASSWORD, FIRST_NAME, 4, false);
+        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, "kindle", getContentFolder(), null, EMAIL, PASSWORD, FIRST_NAME, 4, false);
     }
 
     @Test
