@@ -7,7 +7,6 @@ import com.ericrobertbrewer.bookspider.sites.SiteScraperTest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.openqa.selenium.Dimension;
 import org.openqa.selenium.WebDriver;
 
 import java.io.IOException;
@@ -68,11 +67,6 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
     void returnKindleUnlimitedBookTest() {
         // 'Gate 76' in Amazon Kindle Store: `https://www.amazon.com/dp/B07BD35VN6`.
         assertTrue(getScraper().returnKindleUnlimitedBook(driver, "Gate 76", EMAIL, PASSWORD));
-    }
-
-    @Test
-    void idTest() {
-        assertTrue(AmazonKindle.TEXT_ID_COMPARATOR.compare("a:2", "a:3") < 0);
     }
 
     @Override
