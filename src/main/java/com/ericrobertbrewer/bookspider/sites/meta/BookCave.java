@@ -407,7 +407,13 @@ public class BookCave extends SiteScraper {
                             level.rating = rating.rating;
                             final WebElement titleDiv = columnDiv.findElement(By.className("level-title"));
                             final String titleText = titleDiv.getText();
-                            level.title = titleText.substring(titleText.indexOf(")") + 1).trim();
+                            final String title = titleText.substring(titleText.indexOf(")") + 1).trim();
+                            if (LEVEL_TITLE_ALIASES.containsKey(title)) {
+                                level.title = LEVEL_TITLE_ALIASES.get(title);
+                            } else {
+                                getLogger().log(Level.SEVERE, "Unknown level title alias for level title `" + title + "` for book `" + bookId + "`. Please add the correct alias for this title. Using given title.");
+                                level.title = title;
+                            }
                             final WebElement countSpan = columnDiv.findElement(By.className("level-count"));
                             final String levelCountIntegerText = countSpan.getText().replaceAll("[()]", "").trim();
                             try {
@@ -456,6 +462,79 @@ public class BookCave extends SiteScraper {
                 getLogger().log(Level.WARNING, "Unusual database response `" + levelResult + "` when inserting book rating level `" + bookId + ":" + level.rating + ":" + level.title + "`.");
             }
         }
+    }
+
+    private static String[][] LEVEL_TITLES = {{
+            "None",
+            "Mild crude humor",
+            "Moderate crude humor/language",
+            "Significant crude humor/language",
+            "Extensive crude humor/language"
+    }, {
+            "None",
+            "Mild substance use",
+            "Some substance use",
+            "Moderate substance use by adults and/or some use by minors",
+            "Significant substance use",
+            "Extensive substance abuse"
+    }, {
+            "None",
+            "Mild kissing",
+            "Passionate kissing"
+    }, {
+            "None",
+            "Mild language",
+            "Some profanity (6 to 40)", // "Some profanity (10 to 40)"
+            "Moderate profanity (41 to 100)",
+            "Significant profanity (101 to 200)",
+            "Significant profanity (201 to 500)",
+            "Extensive profanity (501+)"
+    }, {
+            "None",
+            "Brief (nonsexual) nudity",
+            "Brief nudity",
+            "Some nudity",
+            "Extensive nudity"
+    }, {
+            "None",
+            "Mild sensuality",
+            "Non-graphic sexual references",
+            "Non-detailed fade-out sensuality",
+            "Fade-out intimacy with details or significant sexual discussion",
+            "Semi-detailed onscreen love scenes",
+            "Detailed onscreen love scenes",
+            "Repeated graphic sex", // "Repeated graphic love scenes (erotica)"
+            "Menage or BDSM sex"
+    }, {
+            "None",
+            "Mild (nonsexual) violence or horror",
+            "Some violence or horror",
+            "Moderate violence or horror",
+            "Graphic violence or horror",
+            "Extended gruesome and depraved violence or horror"
+    }, {
+            "None",
+            "Minor gay/lesbian characters or elements",
+            "Prominent gay/lesbian character(s)"
+    }};
+
+    /**
+     * Prevent mismatched level titles which refer to the same logical rating level in the database.
+     * This keeps us from having to continually update the database each time a non-functional change occurs.
+     */
+    private static Map<String, String> LEVEL_TITLE_ALIASES = new HashMap<>();
+
+    static {
+        // All 'true' level titles alias to themselves.
+        for (String[] categoryLevelTitles : LEVEL_TITLES) {
+            for (String title : categoryLevelTitles) {
+                LEVEL_TITLE_ALIASES.put(title, title);
+            }
+        }
+        // Map each updated level title to its 'true' title.
+        // Last updated on 2/13/2019.
+        LEVEL_TITLE_ALIASES.put("Some profanity (10 to 40)", LEVEL_TITLES[3][2]);
+        LEVEL_TITLE_ALIASES.put("Repeated graphic love scenes (erotica)", LEVEL_TITLES[5][7]);
     }
 
     private static String getDescription(WebElement element) {
