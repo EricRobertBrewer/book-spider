@@ -170,12 +170,8 @@ public class BookCave extends SiteScraper {
                     getLogger().log(Level.WARNING, "Unable to find web element while exploring frontier at page " + page + ".", e);
                 } catch (TimeoutException e) {
                     getLogger().log(Level.WARNING, "Received timeout while exploring frontier at page " + page + ".", e);
-                    try {
-                        // Give the site 10 seconds to recover.
-                        Thread.sleep(10000L);
-                    } catch (InterruptedException ie) {
-                        ie.printStackTrace();
-                    }
+                    // Give the site 10 seconds to recover.
+                    DriverUtils.sleep(10000L);
                 }
                 retries--;
             }
@@ -187,11 +183,7 @@ public class BookCave extends SiteScraper {
     private boolean exploreFrontierPage(WebDriver driver, Queue<String> frontier, Set<String> frontierSet, PrintStream frontierOut, int page) {
         driver.navigate().to("https://mybookcave.com/mybookratings/rated-books/page/" + page + "/");
         // Allow page elements to load.
-        try {
-            Thread.sleep(1000L);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        DriverUtils.sleep(1000L);
         DriverUtils.scrollDown(driver, 10, 50L);
         // Scrape each item's book ID.
         final WebElement contentMain = driver.findElement(By.id("content"));
@@ -235,11 +227,7 @@ public class BookCave extends SiteScraper {
         while (isExploringFrontier.get() || !frontier.isEmpty()) {
             // Wait for frontier to populate before polling.
             if (frontier.isEmpty()) {
-                try {
-                    Thread.sleep(5000L);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+                DriverUtils.sleep(5000L);
                 continue;
             }
             final String bookId = frontier.poll();
@@ -408,11 +396,7 @@ public class BookCave extends SiteScraper {
                     // This is more reliable than clicking the bar, since the bar can be covered by the book cover image.
                     // See `https://mybookcave.com/mybookratings/rated-book/chronicles-of-ara/`.
                     ratingNameSpan.click();
-                    try {
-                        Thread.sleep(50L);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                    DriverUtils.sleep(50L);
                     try {
                         // The tooltip `div` element should become visible in the page (usually right at the bottom of the `body` element).
                         final WebElement tooltipDiv = driver.findElement(By.className("tooltip"));
@@ -440,11 +424,7 @@ public class BookCave extends SiteScraper {
                     // This allows any bars past the first to be clickable.
                     // See `https://mybookcave.com/mybookratings/rated-book/the-art-of-love/`.
                     titleH1.click();
-                    try {
-                        Thread.sleep(50L);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
+                    DriverUtils.sleep(50L);
                 } else {
                     getLogger().log(Level.WARNING, "Found a rating bar without a tool tip for book `" + bookId + "`.");
                 }
