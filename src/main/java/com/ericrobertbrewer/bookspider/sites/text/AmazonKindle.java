@@ -1578,7 +1578,7 @@ public class AmazonKindle extends SiteScraper {
                 idToText.put(dataNid, visibleText);
                 return;
             }
-            getLogger().log(Level.SEVERE, "Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Skipping.");
+            throw new RuntimeException("Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Consider collecting this content manually. Skipping.");
         }
 
         private static boolean isStandardId(String id) {
