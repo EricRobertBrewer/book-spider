@@ -156,7 +156,7 @@ public class CommonSenseMedia extends SiteScraper {
         frontierThread.start();
 
         // Create separate threads to scrape books.
-        scrapeBooksThreaded(frontier, threads, factory, databaseHelper, maxRetries, force, callback);
+        scrapeBooksThreaded(threads, factory, frontier, databaseHelper, maxRetries, force, callback);
     }
 
     /**
@@ -224,7 +224,7 @@ public class CommonSenseMedia extends SiteScraper {
         return false;
     }
 
-    private void scrapeBooksThreaded(Queue<String> frontier, int threads, WebDriverFactory factory, DatabaseHelper databaseHelper, int maxRetries, boolean force, Launcher.Callback callback) {
+    private void scrapeBooksThreaded(int threads, WebDriverFactory factory, Queue<String> frontier, DatabaseHelper databaseHelper, int maxRetries, boolean force, Launcher.Callback callback) {
         for (int i = 0; i < threads; i++) {
             final Thread scrapeThread = new Thread(() -> {
                 scrapeThreadsRunning.incrementAndGet();

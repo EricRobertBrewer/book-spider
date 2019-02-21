@@ -16,7 +16,9 @@ import java.io.*;
 import java.nio.file.Files;
 import java.sql.SQLException;
 import java.util.*;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -78,7 +80,7 @@ public class BookCave extends SiteScraper {
     }
 
     private final AtomicBoolean isExploringFrontier = new AtomicBoolean(false);
-    private final AtomicBoolean isScrapingBooks = new AtomicBoolean(false);
+    private final AtomicInteger scrapeThreadsRunning = new AtomicInteger(0);
 
     private BookCave(Logger logger) {
         super(logger);
@@ -86,9 +88,25 @@ public class BookCave extends SiteScraper {
 
     @Override
     public void scrape(WebDriverFactory factory, File contentFolder, String[] args, final Launcher.Callback callback) {
-        getLogger().log(Level.INFO, "Scraping Book Cave.");
+        // Collect arguments.
+        if (args.length > 2) {
+            throw new IllegalArgumentException("Usage: [threads=1] [max-retries=1]");
+        }
+        final int threads;
+        if (args.length > 0) {
+            threads = Integer.parseInt(args[0]);
+        } else {
+            threads = 1;
+        }
+        final int maxRetries;
+        if (args.length > 1) {
+            maxRetries = Integer.parseInt(args[1]);
+        } else {
+            maxRetries = 1;
+        }
+
         // Create frontier.
-        final Queue<String> frontier = new LinkedList<>();
+        final Queue<String> frontier = new ConcurrentLinkedQueue<>();
         final File frontierFile = new File(contentFolder, "frontier.txt");
         final boolean exists = frontierFile.exists();
         if (exists) {
@@ -101,6 +119,7 @@ public class BookCave extends SiteScraper {
                 getLogger().log(Level.WARNING, "Unable to read existing frontier file.", e);
             }
         }
+
         // Create PrintWriter.
         final PrintStream frontierOut;
         try {
@@ -109,6 +128,11 @@ public class BookCave extends SiteScraper {
             getLogger().log(Level.SEVERE, "Unable to write to frontier file.", e);
             return;
         }
+
+        // Create DatabaseHelper.
+        final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
+        databaseHelper.connectToContentsDatabase();
+
         // Populate the frontier.
         final Thread frontierThread = new Thread(() -> {
             isExploringFrontier.set(true);
@@ -120,31 +144,15 @@ public class BookCave extends SiteScraper {
             }
             frontierDriver.quit();
             isExploringFrontier.set(false);
-            if (!isScrapingBooks.get()) {
+            if (scrapeThreadsRunning.get() == 0) {
+                databaseHelper.close();
                 callback.onComplete();
             }
         }, "frontier");
         frontierThread.start();
-        // Create DatabaseHelper.
-        final DatabaseHelper databaseHelper = new DatabaseHelper(getLogger());
-        // Create a separate thread to scrape books.
-        final Thread scrapeThread = new Thread(() -> {
-            isScrapingBooks.set(true);
-            final WebDriver scrapeDriver = factory.newInstance();
-            databaseHelper.connectToContentsDatabase();
-            try {
-                scrapeBooks(scrapeDriver, frontier, databaseHelper);
-            } catch (Throwable t) {
-                getLogger().log(Level.SEVERE, "Exiting `scrapeBooks` with cause:", t);
-            }
-            databaseHelper.close();
-            scrapeDriver.quit();
-            isScrapingBooks.set(false);
-            if (!isExploringFrontier.get()) {
-                callback.onComplete();
-            }
-        }, "scrape");
-        scrapeThread.start();
+
+        // Create separate threads to scrape books.
+        scrapeBooksThreaded(threads, factory, frontier, databaseHelper, maxRetries, callback);
     }
 
     /**
@@ -213,6 +221,27 @@ public class BookCave extends SiteScraper {
         return false;
     }
 
+    private void scrapeBooksThreaded(int threads, WebDriverFactory factory, Queue<String> frontier, DatabaseHelper databaseHelper, int maxRetries, Launcher.Callback callback) {
+        for (int i = 0; i < threads; i++) {
+            final Thread scrapeThread = new Thread(() -> {
+                scrapeThreadsRunning.incrementAndGet();
+                final WebDriver driver = factory.newInstance();
+                try {
+                    scrapeBooks(driver, frontier, databaseHelper, maxRetries);
+                } catch (Throwable t) {
+                    getLogger().log(Level.SEVERE, "Exiting `scrapeBooks` with cause:", t);
+                }
+                driver.quit();
+                scrapeThreadsRunning.decrementAndGet();
+                if (!isExploringFrontier.get() && scrapeThreadsRunning.get() == 0) {
+                    databaseHelper.close();
+                    callback.onComplete();
+                }
+            }, "scrape-" + i);
+            scrapeThread.start();
+        }
+    }
+
     /**
      * Performed by the scrape thread.
      *
@@ -221,7 +250,7 @@ public class BookCave extends SiteScraper {
      * @param databaseHelper To contents database. Should have already been connected.
      *                       This method does not close the connection to the database.
      */
-    private void scrapeBooks(WebDriver driver, Queue<String> frontier, DatabaseHelper databaseHelper) {
+    private void scrapeBooks(WebDriver driver, Queue<String> frontier, DatabaseHelper databaseHelper, int maxRetries) {
         // Start scraping.
         getLogger().log(Level.INFO, "Scraping details...");
         while (isExploringFrontier.get() || !frontier.isEmpty()) {
@@ -241,8 +270,8 @@ public class BookCave extends SiteScraper {
                 // It's safer to skip this book than to scrape its metadata.
                 continue;
             }
-            // Try scraping the metadata of the book with a fixed number retries.
-            int retries = 3;
+            // Try scraping the metadata of the book with a fixed number of retries.
+            int retries = maxRetries;
             while (retries > 0) {
                 try {
                     scrapeBook(driver, bookId, databaseHelper);
