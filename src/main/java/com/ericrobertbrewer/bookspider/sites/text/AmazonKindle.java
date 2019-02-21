@@ -46,9 +46,9 @@ public class AmazonKindle extends SiteScraper {
 
         @Option(name = "-mode",
                 required = true,
-                usage = "Type(s) of content to download. Can be 'preview' (default), 'kindle', or 'both'",
+                usage = "Type(s) of content to download. Can be 'book' (default), 'preview', or 'both'",
                 aliases = {"-m"})
-        String mode;
+        String mode = MODE_BOOK;
 
         @Option(name = "-email",
                 usage = "Amazon account email address",
@@ -81,7 +81,7 @@ public class AmazonKindle extends SiteScraper {
     }
 
     private static final String MODE_PREVIEW = "preview";
-    private static final String MODE_KINDLE = "kindle";
+    private static final String MODE_BOOK = "book";
     private static final String MODE_BOTH = "both";
 
     final List<BookScrapeInfo> bookScrapeInfos;
@@ -118,15 +118,15 @@ public class AmazonKindle extends SiteScraper {
 
         // Check for a valid mode option.
         if (!MODE_PREVIEW.equalsIgnoreCase(options.mode) &&
-                !MODE_KINDLE.equalsIgnoreCase(options.mode) &&
+                !MODE_BOOK.equalsIgnoreCase(options.mode) &&
                 !MODE_BOTH.equalsIgnoreCase(options.mode)) {
             throw new IllegalArgumentException("Unrecognized argument for `mode`: " + options.mode + ".");
         }
 
-        // Check for valid login credentials if scraping Kindle content.
+        // Check for valid login credentials if scraping book content.
         if (!MODE_PREVIEW.equalsIgnoreCase(options.mode)) {
             if (options.email == null || options.password == null || options.firstName == null) {
-                throw new IllegalArgumentException("The options 'email', 'password', and 'firstname' are required when collecting Kindle content.");
+                throw new IllegalArgumentException("The options 'email', 'password', and 'firstname' are required when collecting book content.");
             }
         }
 
@@ -268,7 +268,7 @@ public class AmazonKindle extends SiteScraper {
                 if (previewFile.exists()) {
                     return false;
                 }
-            } else if (MODE_KINDLE.equalsIgnoreCase(mode)) {
+            } else if (MODE_BOOK.equalsIgnoreCase(mode)) {
                 if (textFile.exists()) {
                     return false;
                 }
@@ -317,7 +317,7 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Sign in, if needed.
-        if ((MODE_KINDLE.equalsIgnoreCase(mode) || MODE_BOTH.equals(mode)) &&
+        if ((MODE_BOOK.equalsIgnoreCase(mode) || MODE_BOTH.equals(mode)) &&
                 !isSignedIn(driver, firstName)) {
             navigateToSignInPage(driver);
             signIn(driver, email, password);
@@ -530,7 +530,7 @@ public class AmazonKindle extends SiteScraper {
         setIsWindowSingleColumn(driver, true);
         try {
             // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
-            final KindleContent content = getKindleContent(driver, bookId, asin, email, password, maxRetries);
+            final BookContent content = getBookContent(driver, bookId, asin, email, password, maxRetries);
             // Check whether any content has been extracted.
             if (!content.isEmpty()) {
                 // Persist content once it has been totally collected.
@@ -1268,8 +1268,8 @@ public class AmazonKindle extends SiteScraper {
         driver.manage().window().setSize(isSingleColumn ? singleColumnDimension : defaultDimension);
     }
 
-    private KindleContent getKindleContent(WebDriver driver, String bookId, String asin, String email, String password, int maxRetries) {
-        final KindleContent content = new KindleContent(this);
+    private BookContent getBookContent(WebDriver driver, String bookId, String asin, String email, String password, int maxRetries) {
+        final BookContent content = new BookContent(this);
         // Catch exceptions the first few times...
         int retries = maxRetries;
         final long baseWaitMillis = 10000L;
@@ -1336,13 +1336,13 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private static class KindleContent {
+    private static class BookContent {
 
         private final AmazonKindle kindle;
         private final Map<String, String> idToText = new HashMap<>();
         private final Map<String, String> imgUrlToSrc = new HashMap<>();
 
-        private KindleContent(AmazonKindle kindle) {
+        private BookContent(AmazonKindle kindle) {
             this.kindle = kindle;
         }
 
@@ -1493,7 +1493,7 @@ public class AmazonKindle extends SiteScraper {
             final List<WebElement> children = element.findElements(By.xpath("./*"));
             if (children.size() > 0) {
                 if (isBelowIframe) {
-                    if (children.stream().allMatch(KindleContent::canAddChildElementContent)) {
+                    if (children.stream().allMatch(BookContent::canAddChildElementContent)) {
                         for (WebElement child : children) {
                             addVisibleContent(driver, child, true);
                         }
