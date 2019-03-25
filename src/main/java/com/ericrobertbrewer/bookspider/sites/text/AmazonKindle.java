@@ -1450,6 +1450,7 @@ public class AmazonKindle extends SiteScraper {
                     if (url.startsWith(SIGN_IN_URL_START)) {
                         // If so, sign in again and continue collecting content from the same position in the reader.
                         kindle.signIn(driver, email, password);
+                        getLogger().log(Level.INFO, "Logged in again during collection of book `" + bookId + "`, asin=`" + asin + "`.");
                         collect(driver, bookId, asin, email, password, false, waitMillis);
                     }
                     return;
