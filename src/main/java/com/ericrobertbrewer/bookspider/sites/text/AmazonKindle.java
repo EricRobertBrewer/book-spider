@@ -546,7 +546,7 @@ public class AmazonKindle extends SiteScraper {
                 if (returnKindleUnlimitedBook(driver, title, email, password)) {
                     getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` has been successfully returned through Kindle Unlimited.");
                 } else {
-                    getLogger().log(Level.WARNING, "Unable to return book `" + bookId + "`, asin=`" + asin + "` with title `" + title + "` through Kindle Unlimited.");
+                    getLogger().log(Level.SEVERE, "Unable to return book `" + bookId + "`, asin=`" + asin + "` with title `" + title + "` through Kindle Unlimited.");
                 }
             }
         }
