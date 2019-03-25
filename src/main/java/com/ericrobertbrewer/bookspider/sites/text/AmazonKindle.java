@@ -51,16 +51,19 @@ public class AmazonKindle extends SiteScraper {
         String mode = MODE_BOOK;
 
         @Option(name = "-email",
+                required = true,
                 usage = "Amazon account email address",
                 aliases = {"-e"})
         String email;
 
         @Option(name = "-password",
+                required = true,
                 usage = "Amazon account password",
                 aliases = {"-p"})
         String password;
 
         @Option(name = "-firstname",
+                required = true,
                 usage = "Amazon account first name",
                 aliases = {"-f"})
         String firstName;
@@ -121,13 +124,6 @@ public class AmazonKindle extends SiteScraper {
                 !MODE_BOOK.equalsIgnoreCase(options.mode) &&
                 !MODE_BOTH.equalsIgnoreCase(options.mode)) {
             throw new IllegalArgumentException("Unrecognized argument for `mode`: " + options.mode + ".");
-        }
-
-        // Check for valid login credentials if scraping book content.
-        if (!MODE_PREVIEW.equalsIgnoreCase(options.mode)) {
-            if (options.email == null || options.password == null || options.firstName == null) {
-                throw new IllegalArgumentException("The options 'email', 'password', and 'firstname' are required when collecting book content.");
-            }
         }
 
         // Process the books in a random order.
@@ -317,8 +313,7 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Sign in, if needed.
-        if ((MODE_BOOK.equalsIgnoreCase(mode) || MODE_BOTH.equals(mode)) &&
-                !isSignedIn(driver, firstName)) {
+        if (!isSignedIn(driver, firstName)) {
             navigateToSignInPage(driver);
             signIn(driver, email, password);
             scrapeBook(driver, url, bookId, oldAsin, mode, contentFolder, imagesQueue, email, password, firstName, maxRetries, force);
