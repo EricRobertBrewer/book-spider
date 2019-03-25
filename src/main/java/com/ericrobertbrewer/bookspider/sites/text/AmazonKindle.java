@@ -250,26 +250,19 @@ public class AmazonKindle extends SiteScraper {
             return true;
         }
 
-        // Assume that ASINs of the two different objects are interchangeable.
-        if (!bookScrapeInfo.asin.equals(book.asin)) {
-            return true;
-        }
-
         // Skip this book if `force`=`false` and the text has already been scraped to the ASIN folder.
-        final File bookFolder = new File(contentFolder, bookScrapeInfo.asin);
+        final File bookFolder = getBookFolder(contentFolder, bookScrapeInfo.asin);
         if (bookFolder.exists() && bookFolder.isDirectory()) {
-            final File previewFile = new File(bookFolder, "preview.txt");
-            final File textFile = new File(bookFolder, "text.txt");
             if (MODE_PREVIEW.equalsIgnoreCase(mode)) {
-                if (previewFile.exists()) {
+                if (getPreviewFile(bookFolder).exists()) {
                     return false;
                 }
             } else if (MODE_BOOK.equalsIgnoreCase(mode)) {
-                if (textFile.exists()) {
+                if (getTextFile(bookFolder).exists()) {
                     return false;
                 }
             } else {
-                if (previewFile.exists() && textFile.exists()) {
+                if (getPreviewFile(bookFolder).exists() && getTextFile(bookFolder).exists()) {
                     return false;
                 }
             }
@@ -279,6 +272,18 @@ public class AmazonKindle extends SiteScraper {
         return book.isKindleUnlimited ||
                 isPriceFree(book.price) ||
                 System.currentTimeMillis() - book.lastUpdated >= CHECK_AMAZON_PRICE_DELAY_MILLIS;
+    }
+
+    private File getBookFolder(File contentFolder, String asin) {
+        return new File(contentFolder, asin);
+    }
+
+    private File getPreviewFile(File bookFolder) {
+        return new File(bookFolder, "preview.txt");
+    }
+
+    private File getTextFile(File bookFolder) {
+        return new File(bookFolder, "text.txt");
     }
 
     /**
@@ -423,7 +428,7 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Access this book's folder, which will contain its text and images.
-        final File bookFolder = new File(contentFolder, asin);
+        final File bookFolder = getBookFolder(contentFolder, asin);
         // Check if this book's content has been saved to another folder.
         if (!bookFolder.exists()) {
             if (oldAsin == null) {
@@ -467,7 +472,7 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Skip collecting the content for this book if `force`=`false` and the text file exists.
-        final File textFile = new File(bookFolder, "text.txt");
+        final File textFile = getTextFile(bookFolder);
         if (textFile.exists()) {
             if (force) {
                 if (!textFile.delete()) {
@@ -956,7 +961,7 @@ public class AmazonKindle extends SiteScraper {
 
     private void scrapeBookPreview(WebDriver driver, String bookId, String asin, File bookFolder, Queue<FileDownloadInfo> imagesQueue, WebElement aPageDiv, WebElement dpContainerDiv, boolean force) {
         // Check if the file already exists.
-        final File previewFile = new File(bookFolder, "preview.txt");
+        final File previewFile = getPreviewFile(bookFolder);
         if (previewFile.exists()) {
             if (force) {
                 if (!previewFile.delete()) {
