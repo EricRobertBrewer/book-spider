@@ -43,6 +43,7 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
     private static final String EMAIL = "EMAIL";
     private static final String PASSWORD = "PASSWORD";
     private static final String FIRST_NAME = "FIRST_NAME";
+    private static final boolean REMEMBER_ME = false;
 
     private WebDriver driver;
 
@@ -60,13 +61,13 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
 
     @Test
     void scrapeTest() {
-        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, "kindle", getContentFolder(), null, EMAIL, PASSWORD, FIRST_NAME, 4, false);
+        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, "kindle", getContentFolder(), null, EMAIL, PASSWORD, FIRST_NAME, REMEMBER_ME, 4, false);
     }
 
     @Test
     void returnKindleUnlimitedBookTest() {
         // 'Gate 76' in Amazon Kindle Store: `https://www.amazon.com/dp/B07BD35VN6`.
-        assertTrue(getScraper().returnKindleUnlimitedBook(driver, "Gate 76", EMAIL, PASSWORD));
+        assertTrue(getScraper().returnKindleUnlimitedBook(driver, "Gate 76", EMAIL, PASSWORD, REMEMBER_ME));
     }
 
     @Override

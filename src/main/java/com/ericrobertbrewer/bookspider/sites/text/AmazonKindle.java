@@ -68,6 +68,10 @@ public class AmazonKindle extends SiteScraper {
                 aliases = {"-f"})
         String firstName;
 
+        @Option(name = "-rememberme",
+                usage = "Stay signed in (check the `stay signed in` checkbox during sign-in)")
+        boolean rememberMe = false;
+
         @Option(name = "-threads",
                 usage = "Number of threads",
                 aliases = {"-t"})
@@ -141,6 +145,7 @@ public class AmazonKindle extends SiteScraper {
                 options.email,
                 options.password,
                 options.firstName,
+                options.rememberMe,
                 options.maxRetries,
                 options.force,
                 callback);
@@ -154,6 +159,7 @@ public class AmazonKindle extends SiteScraper {
                                      String email,
                                      String password,
                                      String firstName,
+                                     boolean rememberMe,
                                      int maxRetries,
                                      boolean force,
                                      Launcher.Callback callback) {
@@ -169,7 +175,7 @@ public class AmazonKindle extends SiteScraper {
             final Thread scrapeThread = new Thread(() -> {
                 scrapeThreadsRunning.incrementAndGet();
                 // Start scraping.
-                scrapeBooks(queue, driver, mode, contentFolder, imagesQueue, email, password, firstName, maxRetries, force);
+                scrapeBooks(queue, driver, mode, contentFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
                 driver.quit();
                 // Finish.
                 if (scrapeThreadsRunning.decrementAndGet() == 0) {
@@ -205,7 +211,7 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, int maxRetries, boolean force) {
+    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, boolean rememberMe, int maxRetries, boolean force) {
         while (!queue.isEmpty()) {
             // Pull the next book off of the queue.
             final BookScrapeInfo bookScrapeInfo = queue.poll();
@@ -219,7 +225,7 @@ public class AmazonKindle extends SiteScraper {
             for (String url : bookScrapeInfo.urls) {
                 try {
                     getLogger().log(Level.INFO, "Processing book `" + bookScrapeInfo.id + "` using URL `" + url + "`.");
-                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, mode, contentFolder, imagesQueue, email, password, firstName, maxRetries, force);
+                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, mode, contentFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
                     break;
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
@@ -303,7 +309,7 @@ public class AmazonKindle extends SiteScraper {
         return price.startsWith(PRICE_FREE);
     }
 
-    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, int maxRetries, boolean force) throws IOException {
+    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, boolean rememberMe, int maxRetries, boolean force) throws IOException {
         // Navigate to the Amazon store page.
         driver.navigate().to(url);
         DriverUtils.sleep(1500L);
@@ -320,8 +326,8 @@ public class AmazonKindle extends SiteScraper {
         // Sign in, if needed.
         if (!isSignedIn(driver, firstName)) {
             navigateToSignInPage(driver);
-            signIn(driver, email, password);
-            scrapeBook(driver, url, bookId, oldAsin, mode, contentFolder, imagesQueue, email, password, firstName, maxRetries, force);
+            signIn(driver, email, password, rememberMe);
+            scrapeBook(driver, url, bookId, oldAsin, mode, contentFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
             return;
         }
 
@@ -530,7 +536,7 @@ public class AmazonKindle extends SiteScraper {
         setIsWindowSingleColumn(driver, true);
         try {
             // Navigate to this book's Amazon Kindle Cloud Reader page, if possible.
-            final BookContent content = getBookContent(driver, bookId, asin, email, password, maxRetries);
+            final BookContent content = getBookContent(driver, bookId, asin, email, password, rememberMe, maxRetries);
             // Check whether any content has been extracted.
             if (!content.isEmpty()) {
                 // Persist content once it has been totally collected.
@@ -548,7 +554,7 @@ public class AmazonKindle extends SiteScraper {
             // Return this book to avoid reaching the 10-book limit for Kindle Unlimited.
             // Hitting the limit prevents any other books from being borrowed through KU.
             if (isKindleUnlimited) {
-                if (returnKindleUnlimitedBook(driver, title, email, password)) {
+                if (returnKindleUnlimitedBook(driver, title, email, password, rememberMe)) {
                     getLogger().log(Level.INFO, "Book `" + bookId + "`, asin=`" + asin + "` has been successfully returned through Kindle Unlimited.");
                 } else {
                     getLogger().log(Level.SEVERE, "Unable to return book `" + bookId + "`, asin=`" + asin + "` with title `" + title + "` through Kindle Unlimited.");
@@ -597,7 +603,7 @@ public class AmazonKindle extends SiteScraper {
      * @param email    Email.
      * @param password Password.
      */
-    private void signIn(WebDriver driver, String email, String password) {
+    private void signIn(WebDriver driver, String email, String password, boolean rememberMe) {
         final WebElement aPageDiv = driver.findElement(By.id("a-page"));
         final WebElement centerSectionDiv = aPageDiv.findElement(By.id("authportal-center-section"));
         final WebElement mainSectionDiv = centerSectionDiv.findElement(By.id("authportal-main-section"));
@@ -615,8 +621,10 @@ public class AmazonKindle extends SiteScraper {
         passwordInput.click();
         passwordInput.sendKeys(password);
         // Click 'Keep me logged in' to avoid being logged out.
-        final WebElement rememberMeSpan = driver.findElement(By.className("a-checkbox-label"));
-        rememberMeSpan.click();
+        if (rememberMe) {
+            final WebElement rememberMeSpan = driver.findElement(By.className("a-checkbox-label"));
+            rememberMeSpan.click();
+        }
         // Submit.
         final WebElement signInSubmitInput = driver.findElement(By.id("signInSubmit"));
         signInSubmitInput.click();
@@ -1268,14 +1276,14 @@ public class AmazonKindle extends SiteScraper {
         driver.manage().window().setSize(isSingleColumn ? singleColumnDimension : defaultDimension);
     }
 
-    private BookContent getBookContent(WebDriver driver, String bookId, String asin, String email, String password, int maxRetries) {
+    private BookContent getBookContent(WebDriver driver, String bookId, String asin, String email, String password, boolean rememberMe, int maxRetries) {
         final BookContent content = new BookContent(this);
         // Catch exceptions the first few times...
         int retries = maxRetries;
         final long baseWaitMillis = 10000L;
         while (retries > 1) {
             try {
-                content.collect(driver, bookId, asin, email, password, true, baseWaitMillis + (maxRetries - retries) * 5000L);
+                content.collect(driver, bookId, asin, email, password, rememberMe, true, baseWaitMillis + (maxRetries - retries) * 5000L);
                 if (!content.isEmpty()) {
                     return content;
                 }
@@ -1290,11 +1298,11 @@ public class AmazonKindle extends SiteScraper {
             retries--;
         }
         // Then fail the last time.
-        content.collect(driver, bookId, asin, email, password, true, baseWaitMillis + (maxRetries - 1) * 5000L);
+        content.collect(driver, bookId, asin, email, password, rememberMe, true, baseWaitMillis + (maxRetries - 1) * 5000L);
         return content;
     }
 
-    boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password) {
+    boolean returnKindleUnlimitedBook(WebDriver driver, String title, String email, String password, boolean rememberMe) {
         // Navigate to the 'Content and Devices' account page, showing only borrowed books.
         driver.navigate().to("https://www.amazon.com/hz/mycd/myx#/home/content/booksBorrows/dateDsc/");
         DriverUtils.sleep(1000L);
@@ -1307,8 +1315,8 @@ public class AmazonKindle extends SiteScraper {
             final String url = driver.getCurrentUrl();
             if (url.startsWith(SIGN_IN_URL_START)) {
                 // If so, sign in again and try to return the book again.
-                signIn(driver, email, password);
-                return returnKindleUnlimitedBook(driver, title, email, password);
+                signIn(driver, email, password, rememberMe);
+                return returnKindleUnlimitedBook(driver, title, email, password, rememberMe);
             }
             return false;
         }
@@ -1357,7 +1365,7 @@ public class AmazonKindle extends SiteScraper {
             return idToText.size() == 0 && imgUrlToSrc.size() == 0;
         }
 
-        void collect(WebDriver driver, String bookId, String asin, String email, String password, boolean fromStart, long waitMillis) {
+        void collect(WebDriver driver, String bookId, String asin, String email, String password, boolean rememberMe, boolean fromStart, long waitMillis) {
             driver.navigate().to("https://read.amazon.com/?asin=" + asin);
             DriverUtils.sleep(waitMillis);
 
@@ -1454,9 +1462,9 @@ public class AmazonKindle extends SiteScraper {
                     final String url = driver.getCurrentUrl();
                     if (url.startsWith(SIGN_IN_URL_START)) {
                         // If so, sign in again and continue collecting content from the same position in the reader.
-                        kindle.signIn(driver, email, password);
+                        kindle.signIn(driver, email, password, rememberMe);
                         getLogger().log(Level.INFO, "Logged in again during collection of book `" + bookId + "`, asin=`" + asin + "`.");
-                        collect(driver, bookId, asin, email, password, false, waitMillis);
+                        collect(driver, bookId, asin, email, password, rememberMe, false, waitMillis);
                     }
                     return;
                 }
