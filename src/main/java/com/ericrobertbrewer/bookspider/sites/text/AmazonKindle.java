@@ -172,16 +172,18 @@ public class AmazonKindle extends SiteScraper {
             if (defaultDimension == null) {
                 defaultDimension = driver.manage().window().getSize();
             }
+            final int n = i;
             final Thread scrapeThread = new Thread(() -> {
                 scrapeThreadsRunning.incrementAndGet();
                 // Start scraping.
                 scrapeBooks(queue, driver, mode, contentFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
                 driver.quit();
+                getLogger().log(Level.INFO, "Quitting scrape thread " + n + ".");
                 // Finish.
                 if (scrapeThreadsRunning.decrementAndGet() == 0) {
                     databaseHelper.close();
                 }
-            });
+            }, "scrape-" + n);
             scrapeThread.start();
         }
 
