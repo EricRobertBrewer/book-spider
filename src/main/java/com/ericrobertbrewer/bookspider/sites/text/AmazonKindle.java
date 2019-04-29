@@ -1451,12 +1451,18 @@ public class AmazonKindle extends SiteScraper {
                     // Extract the visible text on this page.
                     addVisibleContent(readerDriver, contentDiv, false);
                     // Attempt to turn the page right.
-                    final WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
-                    final String className = pageTurnAreaRightDiv.getAttribute("class");
+                    WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
+                    String className = pageTurnAreaRightDiv.getAttribute("class");
                     if (!className.contains("pageArrow")) {
-                        final long totalTime = System.currentTimeMillis() - startTime;
-                        getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`, asin=`" + asin + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
-                        break;
+                        // Allow right arrow to load, especially after re-logging in.
+                        DriverUtils.sleep(5000L);
+                        pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
+                        className = pageTurnAreaRightDiv.getAttribute("class");
+                        if (!className.contains("pageArrow")) {
+                            final long totalTime = System.currentTimeMillis() - startTime;
+                            getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`, asin=`" + asin + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
+                            break;
+                        }
                     }
                     pageTurnAreaRightDiv.click();
                 } catch (StaleElementReferenceException e) {
