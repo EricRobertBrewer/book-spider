@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.WebDriver;
 
+import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -61,7 +62,10 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
 
     @Test
     void scrapeTest() {
-        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, "kindle", getContentFolder(), null, EMAIL, PASSWORD, FIRST_NAME, REMEMBER_ME, 4, false);
+        final File contentFolder = getContentFolder();
+        final File textFolder = getScraper().getTextFolder(contentFolder);
+        final File imagesFolder = getScraper().getImagesFolder(contentFolder);
+        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, "kindle", contentFolder, textFolder, imagesFolder, null, EMAIL, PASSWORD, FIRST_NAME, REMEMBER_ME, 4, false);
     }
 
     @Test

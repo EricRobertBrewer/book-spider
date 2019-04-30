@@ -130,6 +130,9 @@ public class AmazonKindle extends SiteScraper {
             throw new IllegalArgumentException("Unrecognized argument for `mode`: " + options.mode + ".");
         }
 
+        final File textFolder = getTextFolder(contentFolder);
+        final File imagesFolder = getImagesFolder(contentFolder);
+
         // Process the books in a random order.
         Collections.shuffle(bookScrapeInfos);
 
@@ -142,6 +145,8 @@ public class AmazonKindle extends SiteScraper {
                 factory,
                 options.mode,
                 contentFolder,
+                textFolder,
+                imagesFolder,
                 options.email,
                 options.password,
                 options.firstName,
@@ -151,11 +156,29 @@ public class AmazonKindle extends SiteScraper {
                 callback);
     }
 
+    File getTextFolder(File contentFolder) {
+        final File textFolder = new File(contentFolder, "text");
+        if (!textFolder.exists() && !textFolder.mkdir()) {
+            throw new RuntimeException("Unable to create text folder.");
+        }
+        return textFolder;
+    }
+
+    File getImagesFolder(File contentFolder) {
+        final File imagesFolder = new File(contentFolder, "images");
+        if (!imagesFolder.exists() && !imagesFolder.mkdir()) {
+            throw new RuntimeException("Unable to create images folder.");
+        }
+        return imagesFolder;
+    }
+
     private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue,
                                      int threads,
                                      WebDriverFactory factory,
                                      String mode,
                                      File contentFolder,
+                                     File textFolder,
+                                     File imagesFolder,
                                      String email,
                                      String password,
                                      String firstName,
@@ -176,7 +199,7 @@ public class AmazonKindle extends SiteScraper {
             final Thread scrapeThread = new Thread(() -> {
                 scrapeThreadsRunning.incrementAndGet();
                 // Start scraping.
-                scrapeBooks(queue, driver, mode, contentFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
+                scrapeBooks(queue, driver, mode, contentFolder, textFolder, imagesFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
                 driver.quit();
                 getLogger().log(Level.INFO, "Quitting scrape thread " + n + ".");
                 // Finish.
@@ -213,13 +236,13 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, boolean rememberMe, int maxRetries, boolean force) {
+    void scrapeBooks(Queue<BookScrapeInfo> queue, WebDriver driver, String mode, File contentFolder, File textFolder, File imagesFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, boolean rememberMe, int maxRetries, boolean force) {
         while (!queue.isEmpty()) {
             // Pull the next book off of the queue.
             final BookScrapeInfo bookScrapeInfo = queue.poll();
 
             // Check if this book can be skipped.
-            if (!force && !shouldScrapeBook(bookScrapeInfo, mode, contentFolder)) {
+            if (!force && !shouldScrapeBook(bookScrapeInfo, mode, textFolder)) {
                 continue;
             }
 
@@ -227,7 +250,7 @@ public class AmazonKindle extends SiteScraper {
             for (String url : bookScrapeInfo.urls) {
                 try {
                     getLogger().log(Level.INFO, "Processing book `" + bookScrapeInfo.id + "` using URL `" + url + "`.");
-                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, mode, contentFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
+                    scrapeBook(driver, url, bookScrapeInfo.id, bookScrapeInfo.asin, mode, contentFolder, textFolder, imagesFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
                     break;
                 } catch (NoSuchElementException e) {
                     getLogger().log(Level.WARNING, "Unable to find element while scraping book `" + bookScrapeInfo.id + "`.", e);
@@ -238,7 +261,7 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private boolean shouldScrapeBook(BookScrapeInfo bookScrapeInfo, String mode, File contentFolder) {
+    private boolean shouldScrapeBook(BookScrapeInfo bookScrapeInfo, String mode, File textFolder) {
         // Process this book when there is no known ASIN.
         if (bookScrapeInfo.asin == null) {
             return true;
@@ -259,18 +282,18 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Skip this book if `force`=`false` and the text has already been scraped to the ASIN folder.
-        final File bookFolder = getBookFolder(contentFolder, bookScrapeInfo.asin);
-        if (bookFolder.exists() && bookFolder.isDirectory()) {
+        final File textBookFolder = getBookFolder(textFolder, bookScrapeInfo.asin);
+        if (textBookFolder.exists() && textBookFolder.isDirectory()) {
             if (MODE_PREVIEW.equalsIgnoreCase(mode)) {
-                if (getPreviewFile(bookFolder).exists()) {
+                if (getPreviewFile(textBookFolder).exists()) {
                     return false;
                 }
             } else if (MODE_BOOK.equalsIgnoreCase(mode)) {
-                if (getTextFile(bookFolder).exists()) {
+                if (getTextFile(textBookFolder).exists()) {
                     return false;
                 }
             } else {
-                if (getPreviewFile(bookFolder).exists() && getTextFile(bookFolder).exists()) {
+                if (getPreviewFile(textBookFolder).exists() && getTextFile(textBookFolder).exists()) {
                     return false;
                 }
             }
@@ -282,16 +305,16 @@ public class AmazonKindle extends SiteScraper {
                 System.currentTimeMillis() - book.lastUpdated >= CHECK_AMAZON_PRICE_DELAY_MILLIS;
     }
 
-    private File getBookFolder(File contentFolder, String asin) {
-        return new File(contentFolder, asin);
+    private File getBookFolder(File textOrImagesFolder, String asin) {
+        return new File(textOrImagesFolder, asin);
     }
 
-    private File getPreviewFile(File bookFolder) {
-        return new File(bookFolder, "preview.txt");
+    private File getPreviewFile(File textBookFolder) {
+        return new File(textBookFolder, "preview.txt");
     }
 
-    private File getTextFile(File bookFolder) {
-        return new File(bookFolder, "text.txt");
+    private File getTextFile(File textBookFolder) {
+        return new File(textBookFolder, "text.txt");
     }
 
     /**
@@ -311,7 +334,7 @@ public class AmazonKindle extends SiteScraper {
         return price.startsWith(PRICE_FREE);
     }
 
-    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, String mode, File contentFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, boolean rememberMe, int maxRetries, boolean force) throws IOException {
+    private void scrapeBook(WebDriver driver, String url, String bookId, String oldAsin, String mode, File contentFolder, File textFolder, File imagesFolder, Queue<FileDownloadInfo> imagesQueue, String email, String password, String firstName, boolean rememberMe, int maxRetries, boolean force) throws IOException {
         // Navigate to the Amazon store page.
         driver.navigate().to(url);
         DriverUtils.sleep(1500L);
@@ -329,7 +352,7 @@ public class AmazonKindle extends SiteScraper {
         if (!isSignedIn(driver, firstName)) {
             navigateToSignInPage(driver);
             signIn(driver, email, password, rememberMe);
-            scrapeBook(driver, url, bookId, oldAsin, mode, contentFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
+            scrapeBook(driver, url, bookId, oldAsin, mode, contentFolder, textFolder, imagesFolder, imagesQueue, email, password, firstName, rememberMe, maxRetries, force);
             return;
         }
 
@@ -435,15 +458,17 @@ public class AmazonKindle extends SiteScraper {
             databaseHelper.getLogger().log(Level.SEVERE, "Unable to update Amazon book asin=`" + asin + "` in database.", e);
         }
 
-        // Access this book's folder, which will contain its text and images.
-        final File bookFolder = getBookFolder(contentFolder, asin);
-        // Check if this book's content has been saved to another folder.
-        if (!bookFolder.exists()) {
+        // Access this book's content folders, which will contain its text or images.
+        final File textBookFolder = getBookFolder(textFolder, asin);
+        final File imagesBookFolder = getBookFolder(imagesFolder, asin);
+        // Check if this book's content has been saved to another legacy folder.
+        final File asinBookFolder = getBookFolder(contentFolder, asin);
+        if (!textBookFolder.exists() || !imagesBookFolder.exists()) {
             if (oldAsin == null) {
                 // Rename this book ID-named folder (legacy) to the ASIN-named folder, if possible.
                 final File idBookFolder = new File(contentFolder, bookId);
                 if (idBookFolder.exists() && idBookFolder.isDirectory()) {
-                    if (!idBookFolder.renameTo(bookFolder)) {
+                    if (!idBookFolder.renameTo(asinBookFolder)) {
                         getLogger().log(Level.SEVERE, "Unable to rename legacy ID-named book folder `" + bookId + "` to ASIN-named book folder `" + asin + "`. Skipping.");
                         return;
                     } else {
@@ -452,9 +477,9 @@ public class AmazonKindle extends SiteScraper {
                 }
             } else if (!oldAsin.equals(asin)) {
                 // Rename old ASIN-named book folder, if possible.
-                final File oldBookFolder = new File(contentFolder, oldAsin);
-                if (oldBookFolder.exists() && oldBookFolder.isDirectory()) {
-                    if (!oldBookFolder.renameTo(bookFolder)) {
+                final File oldAsinBookFolder = new File(contentFolder, oldAsin);
+                if (oldAsinBookFolder.exists() && oldAsinBookFolder.isDirectory()) {
+                    if (!oldAsinBookFolder.renameTo(asinBookFolder)) {
                         getLogger().log(Level.SEVERE, "Unable to rename old ASIN-named book folder `" + oldAsin + "` to `" + asin + "`. Skipping.");
                         return;
                     } else {
@@ -463,15 +488,19 @@ public class AmazonKindle extends SiteScraper {
                 }
             }
         }
-        // Create the book folder, if needed.
-        if (!bookFolder.exists() && !bookFolder.mkdirs()) {
-            getLogger().log(Level.SEVERE, "Unable to create book folder for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
+        // Create the text and images folders, if needed.
+        if (!textBookFolder.exists() && !textBookFolder.mkdirs()) {
+            getLogger().log(Level.SEVERE, "Unable to create text book folder for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
+            return;
+        }
+        if (!imagesBookFolder.exists() && !imagesBookFolder.mkdirs()) {
+            getLogger().log(Level.SEVERE, "Unable to create images book folder for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
             return;
         }
 
         // Collect this book's 'Look Inside' preview, if applicable.
         if (MODE_PREVIEW.equalsIgnoreCase(mode) || MODE_BOTH.equalsIgnoreCase(mode)) {
-            scrapeBookPreview(driver, bookId, asin, bookFolder, imagesQueue, aPageDiv, dpContainerDiv, force);
+            scrapeBookPreview(driver, bookId, asin, textBookFolder, imagesBookFolder, imagesQueue, aPageDiv, dpContainerDiv, force);
         }
 
         // Finish if we're only scraping book previews.
@@ -480,7 +509,7 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Skip collecting the content for this book if `force`=`false` and the text file exists.
-        final File textFile = getTextFile(bookFolder);
+        final File textFile = getTextFile(textBookFolder);
         if (textFile.exists()) {
             if (force) {
                 if (!textFile.delete()) {
@@ -545,7 +574,7 @@ public class AmazonKindle extends SiteScraper {
                 getLogger().log(Level.INFO, "Writing text for book `" + bookId + "`, asin=`" + asin + "`.");
                 content.writeBook(textFile);
                 getLogger().log(Level.INFO, "Saving images for book `" + bookId + "`, asin=`" + asin + "`.");
-                content.saveImages(bookFolder);
+                content.saveImages(imagesBookFolder);
                 getLogger().log(Level.INFO, "Successfully collected and saved content for book `" + bookId + "`, asin=`" + asin + "`.");
             } else {
                 getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "`, asin=`" + asin + "` after " + maxRetries + " retries. Quitting.");
@@ -969,9 +998,9 @@ public class AmazonKindle extends SiteScraper {
         }
     }
 
-    private void scrapeBookPreview(WebDriver driver, String bookId, String asin, File bookFolder, Queue<FileDownloadInfo> imagesQueue, WebElement aPageDiv, WebElement dpContainerDiv, boolean force) {
+    private void scrapeBookPreview(WebDriver driver, String bookId, String asin, File textBookFolder, File imagesBookFolder, Queue<FileDownloadInfo> imagesQueue, WebElement aPageDiv, WebElement dpContainerDiv, boolean force) {
         // Check if the file already exists.
-        final File previewFile = getPreviewFile(bookFolder);
+        final File previewFile = getPreviewFile(textBookFolder);
         if (previewFile.exists()) {
             if (force) {
                 if (!previewFile.delete()) {
@@ -1079,7 +1108,7 @@ public class AmazonKindle extends SiteScraper {
         final WebElement rootElement = findRootPreviewElement(readerKindleSampleDiv);
         try {
             final PreviewContent content = new PreviewContent(this);
-            content.collect(driver, rootElement, bookFolder);
+            content.collect(driver, rootElement, imagesBookFolder);
             content.writePreview(previewFile);
             getLogger().log(Level.INFO, "Successfully wrote preview for book `" + bookId + "`, asin=`" + asin + "`.");
             content.downloadImages(imagesQueue);
@@ -1129,12 +1158,12 @@ public class AmazonKindle extends SiteScraper {
             return kindle.getLogger();
         }
 
-        private void collect(WebDriver driver, WebElement element, File bookFolder) {
+        private void collect(WebDriver driver, WebElement element, File imagesBookFolder) {
             // Search recursively for matching children.
             final List<WebElement> children = element.findElements(By.xpath("./*"));
             if (children.size() > 0 && !areAllFormatting(children)) {
                 for (WebElement child : children) {
-                    collect(driver, child, bookFolder);
+                    collect(driver, child, imagesBookFolder);
                 }
                 return;
             }
@@ -1149,7 +1178,7 @@ public class AmazonKindle extends SiteScraper {
             } else if ("iframe".equals(tag)) {
                 final WebDriver frameDriver = driver.switchTo().frame(element);
                 final WebElement frameBody = frameDriver.findElement(By.tagName("body"));
-                collect(frameDriver, frameBody, bookFolder);
+                collect(frameDriver, frameBody, imagesBookFolder);
                 frameDriver.switchTo().parentFrame();
                 return;
             }
@@ -1160,7 +1189,7 @@ public class AmazonKindle extends SiteScraper {
             // Check for and download any images within image (`img`) tags.
             final String[] imageUrls = getImageUrls(html);
             for (String url : imageUrls) {
-                fileDownloadInfos.add(new FileDownloadInfo(url, bookFolder));
+                fileDownloadInfos.add(new FileDownloadInfo(url, imagesBookFolder));
             }
 
             // On every relevant LEAF-ELEMENT, check for a `background-image` CSS attribute.
@@ -1172,7 +1201,7 @@ public class AmazonKindle extends SiteScraper {
                 } else {
                     url = backgroundImageValue.trim();
                 }
-                fileDownloadInfos.add(new FileDownloadInfo(url, bookFolder));
+                fileDownloadInfos.add(new FileDownloadInfo(url, imagesBookFolder));
             }
 
             // Convert HTML to human-readable text.
