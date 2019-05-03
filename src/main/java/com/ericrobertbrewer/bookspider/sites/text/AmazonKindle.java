@@ -1439,13 +1439,9 @@ public class AmazonKindle extends SiteScraper {
             }
 
             // Log the footer message, just to inform us how long this book will be (# of pages and locations).
-            try {
-                final WebElement footerDiv = bookContainerDiv.findElement(By.id("kindleReader_footer"));
-                final WebElement footerReaderControlsMiddleDiv = footerDiv.findElement(By.id("kindleReader_footer_readerControls_middle"));
-                final WebElement footerMessageDiv = footerReaderControlsMiddleDiv.findElement(By.id("kindleReader_footer_message"));
-                final String footerMessage = footerMessageDiv.getAttribute("textContent").trim();
+            final String footerMessage = getFooterMessage(bookContainerDiv);
+            if (footerMessage != null) {
                 getLogger().log(Level.INFO, "Found Kindle reader footer message for book `" + bookId + "`, asin=`" + asin + "`: `" + footerMessage + "`.");
-            } catch (NoSuchElementException ignored) {
             }
 
             // Find the navigation arrows.
@@ -1490,6 +1486,11 @@ public class AmazonKindle extends SiteScraper {
                         if (!className.contains("pageArrow")) {
                             final long totalTime = System.currentTimeMillis() - startTime;
                             getLogger().log(Level.INFO, "Finished collecting content for book `" + bookId + "`, asin=`" + asin + "`; " + pages + " page" + (pages > 1 ? "s" : "") + " turned; " + totalTime + " total ms elapsed; " + (totalTime / pages) + " average ms elapsed per page.");
+                            // Log the footer message again, to easily verify that we've collected the entire book.
+                            final String endFooterMessage = getFooterMessage(bookContainerDiv);
+                            if (endFooterMessage != null) {
+                                getLogger().log(Level.INFO, "Found last Kindle reader footer message for book `" + bookId + "`, asin=`" + asin + "`: `" + endFooterMessage + "`.");
+                            }
                             break;
                         }
                     }
@@ -1506,6 +1507,17 @@ public class AmazonKindle extends SiteScraper {
                     return;
                 }
             }
+        }
+
+        private String getFooterMessage(WebElement bookContainerDiv) {
+            try {
+                final WebElement footerDiv = bookContainerDiv.findElement(By.id("kindleReader_footer"));
+                final WebElement footerReaderControlsMiddleDiv = footerDiv.findElement(By.id("kindleReader_footer_readerControls_middle"));
+                final WebElement footerMessageDiv = footerReaderControlsMiddleDiv.findElement(By.id("kindleReader_footer_message"));
+                return footerMessageDiv.getAttribute("textContent").trim();
+            } catch (NoSuchElementException ignored) {
+            }
+            return null;
         }
 
         private void addVisibleContent(WebDriver driver, WebElement element, boolean isBelowIframe) {
