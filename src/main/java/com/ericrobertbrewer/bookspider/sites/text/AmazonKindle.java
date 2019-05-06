@@ -528,7 +528,7 @@ public class AmazonKindle extends SiteScraper {
             // Click 'Read for Free'.
             try {
                 // Check if the borrowing was successful.
-                borrowBookThroughKindleUnlimited(driver, dpContainerDiv, layoutType);
+                borrowBookThroughKindleUnlimited(driver, dpContainerDiv, layoutType, bookId, asin, email, password, rememberMe);
             } catch (NoSuchElementException e) {
                 // We were unable to borrow the book. Probably the 10-book limit is met.
                 getLogger().log(Level.WARNING, "Unable to borrow book `" + bookId + "`, asin=`" + asin + "` through Kindle Unlimited. This book may not be available through Kindle Cloud Reader. Or has the 10-book KU limit been met? Skipping.");
@@ -920,7 +920,7 @@ public class AmazonKindle extends SiteScraper {
         return false;
     }
 
-    private void borrowBookThroughKindleUnlimited(WebDriver driver, WebElement dpContainerDiv, LayoutType layoutType) {
+    private void borrowBookThroughKindleUnlimited(WebDriver driver, WebElement dpContainerDiv, LayoutType layoutType, String bookId, String asin, String email, String password, boolean rememberMe) {
         final WebElement borrowButton;
         if (layoutType == LayoutType.COLUMNS) {
             final WebElement buyboxDiv = findBuyboxDiv(dpContainerDiv);
@@ -929,6 +929,12 @@ public class AmazonKindle extends SiteScraper {
             borrowButton = dpContainerDiv.findElement(By.id("borrow-button"));
         }
         borrowButton.click();
+        DriverUtils.sleep(2000L);
+        final String url = driver.getCurrentUrl();
+        if (url.startsWith(SIGN_IN_URL_START)) {
+            signIn(driver, email, password, rememberMe);
+            getLogger().log(Level.INFO, "Logged in again while attempting to borrow book `" + bookId + "`, asin=`" + asin + "`.");
+        }
         ensureBorrowSucceeded(driver);
     }
 
