@@ -1540,6 +1540,9 @@ public class AmazonKindle extends SiteScraper {
             // 1 - We can't assume that once we've seen an element without text that its text won't be filled in later.
             //     See `https://read.amazon.com/?asin=B01A5C7DC0`.
             // 2 - We can't assume that elements are always loaded in ID order.
+            // We DO, however, make the following assumptions:
+            // a - IDs are RELIABLE, that is, each unique ID always refers to the same piece of text.
+
             // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
             // Return the visible text of all relevant children, if any exist.
             final List<WebElement> children = element.findElements(By.xpath("./*"));
