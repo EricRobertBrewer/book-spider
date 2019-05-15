@@ -841,6 +841,11 @@ public class AmazonKindle extends SiteScraper {
             try {
                 buyboxDiv.findElement(By.tagName("table"));
             } catch (NoSuchElementException e) {
+                if (isBookOwned(dpContainerDiv, layoutType)) {
+                    return PurchaseType.PURCHASE_OWNED;
+                } else if (isBookBorrowedThroughKindleUnlimited(dpContainerDiv, layoutType)) {
+                    return PurchaseType.KINDLE_UNLIMITED_BORROWED;
+                }
                 return PurchaseType.UNAVAILABLE;
             }
         }
