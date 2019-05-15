@@ -131,7 +131,7 @@ public class AmazonKindle extends SiteScraper {
 
         final File activeContentFolder;
         try {
-            activeContentFolder = Folders.getOrMakeContentFolder(Folders.ID_AMAZON_KINDLE_ACTIVE);
+            activeContentFolder = Folders.getOrMakeContentFolder("amazon_kindle-active");
         } catch (IOException e) {
             throw new RuntimeException("Unable to open active content folder.", e);
         }
