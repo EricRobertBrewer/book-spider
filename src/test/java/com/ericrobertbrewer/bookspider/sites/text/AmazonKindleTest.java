@@ -27,7 +27,8 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
             // Add individual books here.
 //            bookScrapeInfos.add(new BookScrapeInfo("my-snowman-paul", new String[]{"https://mybookcave.com/t/?u=0&b=69733&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
 //            bookScrapeInfos.add(new BookScrapeInfo("errol-amberdane", new String[]{"https://mybookcave.com/t/?u=0&b=73560&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
-            bookScrapeInfos.add(new BookScrapeInfo("underdogs", new String[]{"https://mybookcave.com/t/?u=0&b=32294&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
+//            bookScrapeInfos.add(new BookScrapeInfo("underdogs", new String[]{"https://mybookcave.com/t/?u=0&b=32294&r=86&sid=mybookcave&utm_campaign=MBR+site&utm_source=direct&utm_medium=website"}, null));
+            bookScrapeInfos.add(new BookScrapeInfo("B07RHQ2ZBH", new String[] {"https://www.amazon.com/dp/B07RHQ2ZBH"}, "B07RHQ2ZBH"));
             return new AmazonKindle(logger, bookScrapeInfos);
         }
 
