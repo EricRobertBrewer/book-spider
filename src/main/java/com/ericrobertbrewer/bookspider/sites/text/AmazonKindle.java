@@ -207,7 +207,9 @@ public class AmazonKindle extends SiteScraper {
                 getLogger().log(Level.INFO, "Quitting scrape thread " + n + ".");
                 // Finish.
                 if (scrapeThreadsRunning.decrementAndGet() == 0) {
-                    databaseHelper.close();
+                    if (databaseHelper.isConnected()) {
+                        databaseHelper.close();
+                    }
                 }
             }, "scrape-" + n);
             scrapeThread.start();
