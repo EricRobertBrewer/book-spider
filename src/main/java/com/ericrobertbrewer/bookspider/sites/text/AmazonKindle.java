@@ -129,12 +129,7 @@ public class AmazonKindle extends SiteScraper {
 
         final File textFolder = getTextFolder(contentFolder);
 
-        final File activeContentFolder;
-        try {
-            activeContentFolder = Folders.getOrMakeContentFolder("amazon_kindle-active");
-        } catch (IOException e) {
-            throw new RuntimeException("Unable to open active content folder.", e);
-        }
+        final File activeContentFolder = getActiveContentFolder();
         final File activeTextFolder = getTextFolder(activeContentFolder);
         final File activeImagesFolder = getImagesFolder(activeContentFolder);
 
@@ -158,6 +153,18 @@ public class AmazonKindle extends SiteScraper {
                 options.rememberMe,
                 options.maxRetries,
                 callback);
+    }
+
+
+    /**
+     * Returns the active content folder, where content is actively downloaded.
+     */
+    File getActiveContentFolder() {
+        try {
+            return Folders.getOrMakeContentFolder("amazon_kindle-active");
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to open active content folder.", e);
+        }
     }
 
     File getTextFolder(File contentFolder) {

@@ -64,12 +64,7 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
     void scrapeTest() {
         final File contentFolder = getContentFolder();
         final File textFolder = getScraper().getTextFolder(contentFolder);
-        final File activeContentFolder;
-        try {
-            activeContentFolder = Folders.getOrMakeContentFolder(Folders.ID_AMAZON_KINDLE_ACTIVE);
-        } catch (IOException e) {
-            throw new RuntimeException("Unable to open active content folder.", e);
-        }
+        final File activeContentFolder = getScraper().getActiveContentFolder();
         final File activeTextFolder = getScraper().getTextFolder(activeContentFolder);
         final File activeImagesFolder = getScraper().getImagesFolder(activeContentFolder);
         getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, "kindle", textFolder, activeTextFolder, activeImagesFolder, null, EMAIL, PASSWORD, FIRST_NAME, REMEMBER_ME, 4);
