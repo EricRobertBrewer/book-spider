@@ -4,8 +4,8 @@ import java.io.File;
 
 public class FileDownloadInfo {
 
-    final String url;
-    final File folder;
+    public final String url;
+    public final File folder;
 
     public FileDownloadInfo(String url, File folder) {
         this.url = url;

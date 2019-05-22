@@ -168,19 +168,11 @@ public class AmazonKindle extends SiteScraper {
     }
 
     File getTextFolder(File contentFolder) {
-        final File textFolder = new File(contentFolder, "text");
-        if (!textFolder.exists() && !textFolder.mkdir()) {
-            throw new RuntimeException("Unable to create text folder.");
-        }
-        return textFolder;
+        return new File(contentFolder, "text");
     }
 
     File getImagesFolder(File contentFolder) {
-        final File imagesFolder = new File(contentFolder, "images");
-        if (!imagesFolder.exists() && !imagesFolder.mkdir()) {
-            throw new RuntimeException("Unable to create images folder.");
-        }
-        return imagesFolder;
+        return new File(contentFolder, "images");
     }
 
     private void scrapeBooksThreaded(Queue<BookScrapeInfo> queue,
@@ -342,7 +334,7 @@ public class AmazonKindle extends SiteScraper {
     }
 
     private File getTextFile(File textBookFolder) {
-        return new File(textBookFolder, "text.txt");
+        return new File(textBookFolder, "text_paragraphs.txt");
     }
 
     /**
@@ -501,15 +493,6 @@ public class AmazonKindle extends SiteScraper {
         // Access this book's content folders, which will contain its text or images.
         final File activeTextBookFolder = getBookFolder(activeTextFolder, asin);
         final File activeImagesBookFolder = getBookFolder(activeImagesFolder, asin);
-        // Create the text and images folders, if needed.
-        if (!activeTextBookFolder.exists() && !activeTextBookFolder.mkdirs()) {
-            getLogger().log(Level.SEVERE, "Unable to create text book folder for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
-            return;
-        }
-        if (!activeImagesBookFolder.exists() && !activeImagesBookFolder.mkdirs()) {
-            getLogger().log(Level.SEVERE, "Unable to create images book folder for book `" + bookId + "`, asin=`" + asin + "`. Skipping.");
-            return;
-        }
 
         // Collect this book's 'Look Inside' preview, if applicable.
         if (MODE_PREVIEW.equalsIgnoreCase(mode) || MODE_BOTH.equalsIgnoreCase(mode)) {
@@ -577,9 +560,9 @@ public class AmazonKindle extends SiteScraper {
             if (!content.isEmpty()) {
                 // Persist content once it has been totally collected.
                 getLogger().log(Level.INFO, "Writing text for book `" + bookId + "`, asin=`" + asin + "`.");
-                content.writeBook(activeTextFile);
+                content.writeBook(activeTextFile, bookId, asin);
                 getLogger().log(Level.INFO, "Saving images for book `" + bookId + "`, asin=`" + asin + "`.");
-                content.saveImages(activeImagesBookFolder);
+                content.saveImages(activeImagesBookFolder, bookId, asin);
                 getLogger().log(Level.INFO, "Successfully collected and saved content for book `" + bookId + "`, asin=`" + asin + "`.");
             } else {
                 getLogger().log(Level.WARNING, "Unable to extract any content for book `" + bookId + "`, asin=`" + asin + "` after " + maxRetries + " retries. Quitting.");
@@ -1016,8 +999,8 @@ public class AmazonKindle extends SiteScraper {
 
     private void scrapeBookPreview(WebDriver driver, String bookId, String asin, File activeTextBookFolder, File activeImagesBookFolder, Queue<FileDownloadInfo> imagesQueue, WebElement aPageDiv, WebElement dpContainerDiv) {
         // Check if the file already exists.
-        final File previewFile = getPreviewFile(activeTextBookFolder);
-        if (previewFile.exists()) {
+        final File activePreviewFile = getPreviewFile(activeTextBookFolder);
+        if (activePreviewFile.exists()) {
             getLogger().log(Level.INFO, "Preview for book `" + bookId + "`, asin=`" + asin + "` has already been extracted. Skipping.");
             return;
         }
@@ -1116,10 +1099,10 @@ public class AmazonKindle extends SiteScraper {
         final WebElement rootElement = findRootPreviewElement(readerKindleSampleDiv);
         try {
             final PreviewContent content = new PreviewContent(this);
-            content.collect(driver, rootElement, activeImagesBookFolder);
-            content.writePreview(previewFile);
+            content.collect(driver, rootElement);
+            content.writePreview(activePreviewFile, bookId, asin);
             getLogger().log(Level.INFO, "Successfully wrote preview for book `" + bookId + "`, asin=`" + asin + "`.");
-            content.downloadImages(imagesQueue);
+            content.downloadImages(activeImagesBookFolder, imagesQueue, bookId, asin);
         } catch (IOException e) {
             getLogger().log(Level.SEVERE, "Encountered error when writing preview ");
         } finally {
@@ -1156,7 +1139,7 @@ public class AmazonKindle extends SiteScraper {
 
         private final AmazonKindle kindle;
         private final List<String> lines = new ArrayList<>();
-        private final List<FileDownloadInfo> fileDownloadInfos = new ArrayList<>();
+        private final List<String> imageUrls = new ArrayList<>();
 
         private PreviewContent(AmazonKindle kindle) {
             this.kindle = kindle;
@@ -1166,12 +1149,12 @@ public class AmazonKindle extends SiteScraper {
             return kindle.getLogger();
         }
 
-        private void collect(WebDriver driver, WebElement element, File imagesBookFolder) {
+        private void collect(WebDriver driver, WebElement element) {
             // Search recursively for matching children.
             final List<WebElement> children = element.findElements(By.xpath("./*"));
             if (children.size() > 0 && !areAllFormatting(children)) {
                 for (WebElement child : children) {
-                    collect(driver, child, imagesBookFolder);
+                    collect(driver, child);
                 }
                 return;
             }
@@ -1186,7 +1169,7 @@ public class AmazonKindle extends SiteScraper {
             } else if ("iframe".equals(tag)) {
                 final WebDriver frameDriver = driver.switchTo().frame(element);
                 final WebElement frameBody = frameDriver.findElement(By.tagName("body"));
-                collect(frameDriver, frameBody, imagesBookFolder);
+                collect(frameDriver, frameBody);
                 frameDriver.switchTo().parentFrame();
                 return;
             }
@@ -1195,10 +1178,8 @@ public class AmazonKindle extends SiteScraper {
             final String html = element.getAttribute("innerHTML");
 
             // Check for and download any images within image (`img`) tags.
-            final String[] imageUrls = getImageUrls(html);
-            for (String url : imageUrls) {
-                fileDownloadInfos.add(new FileDownloadInfo(url, imagesBookFolder));
-            }
+            final String[] urls = getImageUrls(html);
+            imageUrls.addAll(Arrays.asList(urls));
 
             // On every relevant LEAF-ELEMENT, check for a `background-image` CSS attribute.
             final String backgroundImageValue = element.getCssValue("background-image");
@@ -1209,7 +1190,7 @@ public class AmazonKindle extends SiteScraper {
                 } else {
                     url = backgroundImageValue.trim();
                 }
-                fileDownloadInfos.add(new FileDownloadInfo(url, imagesBookFolder));
+                imageUrls.add(url);
             }
 
             // Convert HTML to human-readable text.
@@ -1239,17 +1220,27 @@ public class AmazonKindle extends SiteScraper {
             lines.add(text);
         }
 
-        private void writePreview(File previewFile) throws IOException {
-            final PrintStream out = new PrintStream(previewFile);
+        private void writePreview(File activePreviewFile, String bookId, String asin) throws IOException {
+            if (!activePreviewFile.getParentFile().exists() && !activePreviewFile.getParentFile().mkdirs()) {
+                getLogger().log(Level.SEVERE, "Unable to create text book folder for book `" + bookId + "`, asin=`" + asin + "` while writing preview. Skipping.");
+                return;
+            }
+            final PrintStream out = new PrintStream(activePreviewFile);
             for (String line : lines) {
                 out.println(line);
             }
             out.close();
         }
 
-        private void downloadImages(Queue<FileDownloadInfo> imagesQueue) {
-            for (FileDownloadInfo fileDownloadInfo : fileDownloadInfos) {
-                imagesQueue.offer(fileDownloadInfo);
+        private void downloadImages(File activeImagesBookFolder, Queue<FileDownloadInfo> imagesQueue, String bookId, String asin) {
+            if (imageUrls.size() > 0) {
+                if (!activeImagesBookFolder.exists() && !activeImagesBookFolder.mkdirs()) {
+                    getLogger().log(Level.SEVERE, "Unable to create images book folder for book `" + bookId + "`, asin=`" + asin + "` while downloading images of preview. Skipping.");
+                    return;
+                }
+            }
+            for (String imageUrl : imageUrls) {
+                imagesQueue.offer(new FileDownloadInfo(imageUrl, activeImagesBookFolder));
             }
         }
 
@@ -1386,6 +1377,7 @@ public class AmazonKindle extends SiteScraper {
     private static class BookContent {
 
         private final AmazonKindle kindle;
+        private final Map<String, String> idToHeader = new HashMap<>();
         private final Map<String, String> idToText = new HashMap<>();
         private final Map<String, String> imgUrlToSrc = new HashMap<>();
 
@@ -1482,7 +1474,7 @@ public class AmazonKindle extends SiteScraper {
                 try {
                     final WebElement contentDiv = centerDiv.findElement(By.id("kindleReader_content"));
                     // Extract the visible text on this page.
-                    addVisibleContent(readerDriver, contentDiv, false);
+                    addVisibleContent(readerDriver, contentDiv);
                     // Attempt to turn the page right.
                     WebElement pageTurnAreaRightDiv = sideMarginDiv.findElement(By.id("kindleReader_pageTurnAreaRight"));
                     String className = pageTurnAreaRightDiv.getAttribute("class");
@@ -1528,7 +1520,7 @@ public class AmazonKindle extends SiteScraper {
             return null;
         }
 
-        private void addVisibleContent(WebDriver driver, WebElement element, boolean isBelowIframe) {
+        private void addVisibleContent(WebDriver driver, WebElement element) {
             // Ignore hidden elements.
             if ("hidden".equals(element.getCssValue("visibility"))) {
                 return;
@@ -1540,45 +1532,55 @@ public class AmazonKindle extends SiteScraper {
 
             // Check whether this textual element has already been scraped.
             final String id = element.getAttribute("id");
-            if (idToText.containsKey(id)) {
+            if (idToHeader.containsKey(id) || idToText.containsKey(id)) {
                 return;
             }
             final String dataNid = element.getAttribute("data-nid");
-            if (idToText.containsKey(dataNid)) {
+            if (idToHeader.containsKey(dataNid) || idToText.containsKey(dataNid)) {
                 return;
             }
 
-            // Currently, the entire DOM tree is traversed after every page turn. This is slow, but accurate.
-            // We can't make any guarantees about the structure of the DOM for any given book.
-            // Specifically:
-            // 1 - We can't assume that once we've seen an element without text that its text won't be filled in later.
-            //     See `https://read.amazon.com/?asin=B01A5C7DC0`.
-            // 2 - We can't assume that elements are always loaded in ID order.
-            // We DO, however, make the following assumptions:
-            // a - IDs are RELIABLE, that is, each unique ID always refers to the same piece of text.
+            // Check for center alignment, which denotes a header.
+            final String align = element.getAttribute("align");
+            // Check for `was-a-p` class which denotes (assumed to be) syntactically correct paragraphs.
+            final String className = element.getAttribute("class");
+            // Check for special tags.
+            final String tag = element.getTagName();
 
-            // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
-            // Return the visible text of all relevant children, if any exist.
-            final List<WebElement> children = element.findElements(By.xpath("./*"));
-            if (children.size() > 0) {
-                if (isBelowIframe) {
-                    if (children.stream().allMatch(BookContent::canAddChildElementContent)) {
-                        for (WebElement child : children) {
-                            addVisibleContent(driver, child, true);
-                        }
-                        return;
-                    }
-                    // If not all children can be added, then this element - the parent - will be added.
-                } else {
-                    for (WebElement child : children) {
-                        addVisibleContent(driver, child, false);
+            // Find headers.
+            if ("center".equals(align) ||
+                    tag.equals("h1") ||
+                    tag.equals("h2") ||
+                    tag.equals("h3") ||
+                    tag.equals("h4") ||
+                    tag.equals("h5") ||
+                    tag.equals("h6") ||
+                    tag.equals("h7")) {
+                final String visibleText = element.getText().trim();
+                if (!visibleText.isEmpty() && visibleText.matches("^.*[A-Za-z0-9].*$")) {
+                    if (isStandardId(id)) {
+                        idToHeader.put(id, visibleText);
+                    } else if (isStandardId(dataNid)) {
+                        idToHeader.put(dataNid, visibleText);
                     }
                     return;
                 }
             }
 
-            // Check for special tags.
-            final String tag = element.getTagName();
+            // Find paragraphs.
+            if (className != null && className.contains("was-a-p")) {
+                final String visibleText = element.getText().trim();
+                if (!visibleText.isEmpty() && visibleText.matches("^.*[A-Za-z0-9].*$")) {
+                    if (isStandardId(id)) {
+                        idToText.put(id, visibleText);
+                    } else if (isStandardId(dataNid)) {
+                        idToText.put(dataNid, visibleText);
+                    }
+                    return;
+                }
+            }
+
+            // Handle special tags.
             if ("iframe".equals(tag)) {
                 // Return the visible text of the <body> element.
                 final WebDriver frameDriver = driver.switchTo().frame(element);
@@ -1588,7 +1590,7 @@ public class AmazonKindle extends SiteScraper {
                 // See `https://read.amazon.com/?asin=B009NGHNJI`.
                 final List<WebElement> bodyChildren = body.findElements(By.xpath("./*"));
                 for (WebElement bodyChild : bodyChildren) {
-                    addVisibleContent(frameDriver, bodyChild, true);
+                    addVisibleContent(frameDriver, bodyChild);
                 }
                 frameDriver.switchTo().parentFrame();
                 return;
@@ -1633,45 +1635,26 @@ public class AmazonKindle extends SiteScraper {
                 }
             }
 
-            // Get this leaf-element's visible text.
-            final String visibleText = element.getText().trim();
-            if (visibleText.isEmpty()) {
-                return;
-            }
 
-            // Add the visible text to the keyed collection (Map).
-            if (isStandardId(id)) {
-                idToText.put(id, visibleText);
-                return;
-            } else if (isStandardId(dataNid)) {
-                idToText.put(dataNid, visibleText);
-                return;
+            // Currently, the entire DOM tree is traversed after every page turn. This is slow, but accurate.
+            // We can't make any guarantees about the structure of the DOM for any given book.
+            // Specifically:
+            // 1 - We can't assume that once we've seen an element without text that its text won't be filled in later.
+            //     See `https://read.amazon.com/?asin=B01A5C7DC0`.
+            // 2 - We can't assume that elements are always loaded in ID order.
+            // We DO, however, make the following assumptions:
+            // a - IDs are RELIABLE, that is, each unique ID always refers to the same piece of text.
+
+            // TODO: Make traversal of children more efficient (by skipping parents whose ID have already been scraped?).
+            // Return the visible text of all relevant children, if any exist.
+            final List<WebElement> children = element.findElements(By.xpath("./*"));
+            for (WebElement child : children) {
+                addVisibleContent(driver, child);
             }
-            throw new RuntimeException("Found <" + tag + "> element with non-standard ID `" + id + "` at `" + driver.getCurrentUrl() + "` with text `" + visibleText + "`. Consider collecting this content manually. Skipping.");
         }
 
         private static boolean isStandardId(String id) {
             return id != null && id.contains(":");
-        }
-
-        private static boolean canAddChildElementContent(WebElement child) {
-            final String id = child.getAttribute("id");
-            if (isStandardId(id)) {
-                return true;
-            }
-            final String dataNid = child.getAttribute("data-nid");
-            if (isStandardId(dataNid)) {
-                return true;
-            }
-            final String tag = child.getTagName();
-            if ("img".equals(tag) || "br".equals(tag)) {
-                return true;
-            }
-            //noinspection RedundantIfStatement
-            if ("div".equals(tag) && "content-overlays".equals(id)) {
-                return true;
-            }
-            return false;
         }
 
         private static String getImageUrlFromSrc(String src) {
@@ -1680,19 +1663,73 @@ public class AmazonKindle extends SiteScraper {
                     .trim();
         }
 
-        void writeBook(File activeTextFile) throws IOException {
-            final String[] ids = new ArrayList<>(idToText.keySet()).stream()
+        void writeBook(File activeTextFile, String bookId, String asin) throws IOException {
+            if (idToText.size() == 0) {
+                // Create an empty file to prevent this book from being scraped again.
+                if (!activeTextFile.createNewFile()) {
+                    getLogger().log(Level.SEVERE, "Unable to create empty text file.");
+                }
+                return;
+            }
+
+            // Get paragraphs.
+            final String[] textIds = new ArrayList<>(idToText.keySet()).stream()
                     .sorted(TEXT_ID_COMPARATOR)
                     .toArray(String[]::new);
+            // Get section headers.
+            final String[] headerIds = new ArrayList<>(idToHeader.keySet()).stream()
+                    .sorted(TEXT_ID_COMPARATOR)
+                    .toArray(String[]::new);
+            // Count the number of paragraphs in each section.
+            final int[] headerParagraphSizes = new int[headerIds.length + 1];
+            for (int i = 0; i < headerParagraphSizes.length; i++) {
+                headerParagraphSizes[i] = 0;
+            }
+            int sectionIndex = 0;
+            for (String textId : textIds) {
+                while (sectionIndex < headerIds.length && TEXT_ID_COMPARATOR.compare(headerIds[sectionIndex], textId) < 0) {
+                    sectionIndex++;
+                }
+                headerParagraphSizes[sectionIndex]++;
+            }
+
+            // Write the file.
+            if (!activeTextFile.getParentFile().exists() && !activeTextFile.getParentFile().mkdirs()) {
+                getLogger().log(Level.SEVERE, "Unable to create text book folder for book `" + bookId + "`, asin=`" + asin + "` while writing book. Skipping.");
+                return;
+            }
             final PrintStream out = new PrintStream(activeTextFile);
-            for (String id : ids) {
-                final String line = idToText.get(id);
-                out.println(line);
+            // Write the number of sections.
+            out.println(headerParagraphSizes.length);
+            // Write the section names.
+            for (int i = 0; i < headerParagraphSizes.length; i++) {
+                if (i == 0) {
+                    out.println("[START]");
+                } else {
+                    out.println(idToHeader.get(headerIds[i - 1]));
+                }
+            }
+            // Write the paragraphs in each section.
+            int total = 0;
+            for (int headerParagraphSize : headerParagraphSizes) {
+                // Write the number of paragraphs in this section.
+                out.println(headerParagraphSize);
+                // Write each paragraph in this section.
+                for (int j = 0; j < headerParagraphSize; j++) {
+                    out.println(idToText.get(textIds[total + j]));
+                }
+                total += headerParagraphSize;
             }
             out.close();
         }
 
-        void saveImages(File activeImagesBookFolder) {
+        void saveImages(File activeImagesBookFolder, String bookId, String asin) {
+            if (imgUrlToSrc.size() > 0) {
+                if (!activeImagesBookFolder.exists() && !activeImagesBookFolder.mkdirs()) {
+                    getLogger().log(Level.SEVERE, "Unable to create images book folder for book `" + bookId + "`, asin=`" + asin + "` while downloading images of preview. Skipping.");
+                    return;
+                }
+            }
             for (String url : imgUrlToSrc.keySet()) {
                 try {
                     saveImage(activeImagesBookFolder, url, imgUrlToSrc.get(url));
