@@ -1664,14 +1664,6 @@ public class AmazonKindle extends SiteScraper {
         }
 
         void writeBook(File activeTextFile, String bookId, String asin) throws IOException {
-            if (idToText.size() == 0) {
-                // Create an empty file to prevent this book from being scraped again.
-                if (!activeTextFile.createNewFile()) {
-                    getLogger().log(Level.SEVERE, "Unable to create empty text file.");
-                }
-                return;
-            }
-
             // Get paragraphs.
             final String[] textIds = new ArrayList<>(idToText.keySet()).stream()
                     .sorted(TEXT_ID_COMPARATOR)
