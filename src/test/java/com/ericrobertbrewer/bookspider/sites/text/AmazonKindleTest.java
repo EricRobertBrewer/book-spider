@@ -64,11 +64,27 @@ class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
     @Test
     void scrapeTest() {
         final File contentFolder = getContentFolder();
-        final File textFolder = getScraper().getTextFolder(contentFolder);
+        final File paragraphsFolder = getScraper().getParagraphsFolder(contentFolder);
+        final File previewFolder = getScraper().getPreviewFolder(contentFolder);
         final File activeContentFolder = getScraper().getActiveContentFolder();
-        final File activeTextFolder = getScraper().getTextFolder(activeContentFolder);
+        final File activeParagraphsFolder = getScraper().getParagraphsFolder(activeContentFolder);
+        final File activePreviewFolder = getScraper().getPreviewFolder(activeContentFolder);
         final File activeImagesFolder = getScraper().getImagesFolder(activeContentFolder);
-        getScraper().scrapeBooks(new LinkedList<>(getScraper().bookScrapeInfos), driver, "kindle", textFolder, activeTextFolder, activeImagesFolder, null, EMAIL, PASSWORD, FIRST_NAME, REMEMBER_ME, 4);
+        getScraper().scrapeBooks(
+                new LinkedList<>(getScraper().bookScrapeInfos),
+                driver,
+                "kindle",
+                paragraphsFolder,
+                activeParagraphsFolder,
+                previewFolder,
+                activePreviewFolder,
+                activeImagesFolder,
+                null,
+                EMAIL,
+                PASSWORD,
+                FIRST_NAME,
+                REMEMBER_ME,
+                4);
     }
 
     @Test
