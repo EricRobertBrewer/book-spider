@@ -444,7 +444,13 @@ public class AmazonKindle extends SiteScraper {
 
         // Close the "Read this book for free with Kindle Unlimited" popover, if it appears.
         // See `https://www.amazon.com/dp/1980537615`.
-        closeKindleUnlimitedPopoverIfVisible(driver);
+        try {
+            final WebElement aModalScrollerDiv = driver.findElement(By.className("a-modal-scroller"));
+            final WebElement noButton = aModalScrollerDiv.findElement(By.id("p2dPopoverID-no-button"));
+            noButton.click();
+        } catch (NoSuchElementException ignored) {
+            // It usually doesn't appear.
+        }
 
         // Check the layout type for this book on the first Amazon page, whatever type of media it happens to be.
         final LayoutType firstLayoutType = getStorePageLayoutType(driver);
@@ -702,6 +708,13 @@ public class AmazonKindle extends SiteScraper {
         } catch (NoSuchElementException ignored) {
             // Since we checked the "Keep me signed in" box, our email has already been entered.
         }
+        try {
+            final WebElement continueInput = driver.findElement(By.id("continue"));
+            continueInput.click();
+            DriverUtils.sleep(2500L);
+        } catch (NoSuchElementException ignored) {
+            // When signing in for the second time, only the password text box will appear.
+        }
         // Enter password.
         final WebElement passwordInput = driver.findElement(By.id("ap_password"));
         passwordInput.click();
@@ -714,15 +727,15 @@ public class AmazonKindle extends SiteScraper {
         // Submit.
         final WebElement signInSubmitInput = driver.findElement(By.id("signInSubmit"));
         signInSubmitInput.click();
-    }
-
-    private void closeKindleUnlimitedPopoverIfVisible(WebDriver driver) {
+        DriverUtils.sleep(2500L);
+        // Receive a OTP (one-time password) email.
         try {
-            final WebElement aModalScrollerDiv = driver.findElement(By.className("a-modal-scroller"));
-            final WebElement noButton = aModalScrollerDiv.findElement(By.id("p2dPopoverID-no-button"));
-            noButton.click();
+            final WebElement continueInput = driver.findElement(By.id("continue"));
+            continueInput.click();
+            // Put a debugging breakpoint on the line below to manually enter the OTP.
+            DriverUtils.sleep(2500L);
         } catch (NoSuchElementException ignored) {
-            // It usually doesn't appear.
+            // When signing in for the second time, only the password text box will appear.
         }
     }
 
