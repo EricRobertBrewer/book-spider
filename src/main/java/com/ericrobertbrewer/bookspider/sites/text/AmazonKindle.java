@@ -159,7 +159,6 @@ public class AmazonKindle extends SiteScraper {
                 callback);
     }
 
-
     /**
      * Returns the active content folder, where content is actively downloaded.
      */
@@ -300,6 +299,7 @@ public class AmazonKindle extends SiteScraper {
                             bookScrapeInfo.id,
                             bookScrapeInfo.asin,
                             mode,
+                            paragraphsFolder,
                             activeParagraphsFolder,
                             activePreviewFolder,
                             activeImagesFolder,
@@ -399,6 +399,7 @@ public class AmazonKindle extends SiteScraper {
                             String bookId,
                             String oldAsin,
                             String mode,
+                            File paragraphsFolder,
                             File activeParagraphsFolder,
                             File activePreviewFolder,
                             File activeImagesFolder,
@@ -430,6 +431,7 @@ public class AmazonKindle extends SiteScraper {
                     bookId,
                     oldAsin,
                     mode,
+                    paragraphsFolder,
                     activeParagraphsFolder,
                     activePreviewFolder,
                     activeImagesFolder,
@@ -571,9 +573,9 @@ public class AmazonKindle extends SiteScraper {
         }
 
         // Skip collecting the content for this book if `force`=`false` and the text file exists.
+        final File paragraphsFile = getParagraphsFile(paragraphsFolder, asin);
         final File activeParagraphsFile = getParagraphsFile(activeParagraphsFolder, asin);
-        // TODO: Check if non-active `paragraphs` folder contains this book's paragraphs file.
-        if (activeParagraphsFile.exists()) {
+        if (paragraphsFile.exists() || activeParagraphsFile.exists()) {
             getLogger().log(Level.INFO, "Text for book `" + bookId + "`, asin=`" + asin + "` has already been extracted. Skipping.");
             return;
         }
