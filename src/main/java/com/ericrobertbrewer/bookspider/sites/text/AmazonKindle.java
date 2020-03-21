@@ -16,6 +16,7 @@ import org.kohsuke.args4j.Option;
 import org.openqa.selenium.*;
 import org.openqa.selenium.NoSuchElementException;
 
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -41,6 +42,7 @@ public class AmazonKindle extends SiteScraper {
         public boolean isFreeTimeUnlimited = false;
         public String price = null;
         public long lastUpdated = -1L;
+
     }
 
     public static class Options {

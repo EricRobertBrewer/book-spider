@@ -9,8 +9,8 @@ import com.ericrobertbrewer.bookspider.sites.text.AmazonKindle;
 import com.ericrobertbrewer.web.WebUtils;
 import com.ericrobertbrewer.web.driver.DriverUtils;
 import com.ericrobertbrewer.web.driver.WebDriverFactory;
-import org.openqa.selenium.*;
-import org.openqa.selenium.NoSuchElementException;
+//import org.openqa.selenium.*;
+//import org.openqa.selenium.NoSuchElementException;
 
 import java.io.*;
 import java.nio.file.Files;
