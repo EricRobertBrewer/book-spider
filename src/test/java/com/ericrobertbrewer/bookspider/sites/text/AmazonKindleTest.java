@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AmazonKindleTest extends SiteScraperTest<AmazonKindle> {
 
-    private static final SiteScraper.Provider<AmazonKindle> TEST_PROVIDER = new SiteScraper.Provider<>() {
+    private static final SiteScraper.Provider<AmazonKindle> TEST_PROVIDER = new SiteScraper.Provider<AmazonKindle>() {
         @Override
         public AmazonKindle newInstance(Logger logger) {
             final List<BookScrapeInfo> bookScrapeInfos = new ArrayList<>();

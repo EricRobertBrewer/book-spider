@@ -7,7 +7,6 @@ import okhttp3.Request;
 import okhttp3.Response;
 
 import java.io.*;
-import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -61,7 +60,7 @@ public class FileDownloader {
             final String fileNameCandidate = getFileName(fileInfo.url);
             final File file;
             final File similarFile = findSimilarFile(fileInfo.folder, fileNameCandidate);
-            file = Objects.requireNonNullElseGet(similarFile, () -> new File(fileInfo.folder, fileNameCandidate));
+            file = similarFile != null ? similarFile : new File(fileInfo.folder, fileNameCandidate);
             // Process `force` flag.
             if (file.exists()) {
                 if (force) {

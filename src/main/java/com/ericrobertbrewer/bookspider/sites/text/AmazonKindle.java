@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class AmazonKindle extends SiteScraper {
@@ -1381,11 +1382,12 @@ public class AmazonKindle extends SiteScraper {
 
         private static String[] getImageUrls(String html) {
             // See `https://stackoverflow.com/questions/6020384/create-array-of-regex-matches`.
-            return Pattern.compile("<img[^>]*? src=\"([^\"]+)\"[^>]*?>")
-                    .matcher(html)
-                    .results()
-                    .map(matchResult -> matchResult.group(1))
-                    .toArray(String[]::new);
+            final List<String> results = new ArrayList<>();
+            final Matcher matcher = Pattern.compile("<img[^>]*? src=\"([^\"]+)\"[^>]*?>").matcher(html);
+            while (matcher.find()) {
+                results.add(matcher.group(1));
+            }
+            return results.toArray(new String[0]);
         }
     }
 
