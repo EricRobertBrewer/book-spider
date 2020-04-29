@@ -252,6 +252,18 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         return Collections.unmodifiableList(books);
     }
 
+    public List<BookCave.BookRating> getBookCaveRatings() throws SQLException {
+        final List<BookCave.BookRating> books = new ArrayList<>();
+        final Statement select = getConnection().createStatement();
+        final ResultSet result = select.executeQuery("SELECT * FROM " + TABLE_BOOKCAVE_BOOK_RATINGS + ";");
+        while (result.next()) {
+            final BookCave.BookRating book = makeBookCaveRatingFromResult(result);
+            books.add(book);
+        }
+        select.close();
+        return Collections.unmodifiableList(books);
+    }
+
     public int updateBookCaveBookAsin(String bookId, String asin) throws SQLException {
         final PreparedStatement update = getConnection().prepareStatement("UPDATE " + TABLE_BOOKCAVE_BOOKS +
                 " SET" +
@@ -484,5 +496,13 @@ public class DatabaseHelper extends AbstractDatabaseHelper {
         bookCategory.level = result.getInt("level");
         bookCategory.explanation = result.getString("explanation");
         return bookCategory;
+    }
+
+    private BookCave.BookRating makeBookCaveRatingFromResult(ResultSet result) throws SQLException {
+        final BookCave.BookRating bookRating = new BookCave.BookRating();
+        bookRating.bookId = result.getString("book_id");
+        bookRating.rating = result.getString("rating");
+        bookRating.count = result.getInt("count");
+        return bookRating;
     }
 }
