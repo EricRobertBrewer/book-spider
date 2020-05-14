@@ -6,7 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/src/main/java" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/src/test/java" isTestSource="true" />
     </content>
-    <orderEntry type="jdk" jdkName="1.8" jdkType="JavaSDK" />
+    <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module-library" scope="TEST">
       <library name="JUnit5.2">
@@ -26,5 +26,14 @@
     <orderEntry type="library" name="org.junit.jupiter:junit-jupiter-api:5.6.1" level="project" />
     <orderEntry type="library" name="args4j:args4j:2.33" level="project" />
     <orderEntry type="library" name="org.xerial:sqlite-jdbc:3.25.2" level="project" />
+    <orderEntry type="module-library">
+      <library>
+        <CLASSES>
+          <root url="jar://$MODULE_DIR$/Jama-1.0.3.jar!/" />
+        </CLASSES>
+        <JAVADOC />
+        <SOURCES />
+      </library>
+    </orderEntry>
   </component>
 </module>
