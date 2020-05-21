@@ -91,7 +91,7 @@ public class WordCounter {
                         String[] tokens = line.split(" ");
                         for(int i = 0; i < tokens.length; i++){
                             if(tokens[i].matches(".*[a-zA-Z].*") && !ignore.contains(tokens[i]) && !recorded.contains(tokens[i])) {
-                                recorded.add(tokens[i]);
+                                //recorded.add(tokens[i]);
                                 if (count.containsKey(tokens[i])) {
                                     count.put(tokens[i], count.get(tokens[i]) + 1);
                                 } else {

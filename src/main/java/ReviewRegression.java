@@ -81,7 +81,7 @@ public class ReviewRegression {
 
         Map<String, Map<String, Integer>> counts = WordCounter.getCounts();
         Set<String> words = new HashSet<>();
-        final int NUM_TERMS = 2;
+        final int NUM_TERMS = 3;
         for(int i = 1; i <= thresholds.length; i++){
             Borderlines b = WordCounter.getMaxRat(i, NUM_TERMS, counts);
             for(int j = 0; j < NUM_TERMS; j++){
@@ -98,6 +98,7 @@ public class ReviewRegression {
         }
 
 
+        //Note
 
         //format reviews
         Map<String,Integer> indicer = new HashMap<>();
@@ -151,10 +152,16 @@ public class ReviewRegression {
         double[] vector = new double[keywords.length +  1];
         vector[0] = 1; //allows constant shift
         for(int i = 0; i < keywords.length; i++){
-            if(text.contains(keywords[i])){
+            /*if(text.contains(keywords[i])){
                 vector[i + 1] = 1;
+            }*/
+            String[] words = text.split(" ");
+            for(int j = 0; j < words.length; j++){
+                if(words[j].contains(keywords[i])) vector[i + 1]++;
             }
         }
+
+
 
         return vector;
 
